@@ -1174,15 +1174,7 @@ function PoseCanvas({ videoRef, active, onLandmarks }) {
         window.drawLandmarks(ctx, results.poseLandmarks,
           { color:"#FFD600", fillColor:"#FF6D00", lineWidth:1, radius:5 });
       
-      // Draw helper detection zone indicator
-      const personCount = estimatePersonCount(results.poseLandmarks);
-      if (personCount > 1) {
-        ctx.save();
-        ctx.fillStyle = "rgba(192,57,43,0.7)";
-        ctx.font = "bold 16px sans-serif";
-        ctx.fillText(`👥 ${personCount} people detected`, 10, cv.height - 15);
-        ctx.restore();
-      }
+
       
       if (onLandmarks) onLandmarks(results.poseLandmarks, results.poseWorldLandmarks||null);
     });
@@ -1639,8 +1631,8 @@ function ExercisePanel({ task, exIdx, exState, onStart, onReset, onAccept, onSto
     <div style={{margin:"0 16px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:16,padding:"16px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
         <div>
+          <div style={{fontSize:11,fontWeight:600,color:T.text3,marginBottom:2}}>Exercise {exIdx}</div>
           <div style={{fontSize:15,fontWeight:700,color:T.text}}>{task.label}</div>
-          <div style={{fontSize:11,color:T.accent,fontWeight:600,marginTop:2}}>AI-Assisted (MediaPipe)</div>
         </div>
         <div style={{fontSize:11,color:T.text3}}>max {task.maxScore} pts</div>
       </div>
@@ -1778,11 +1770,10 @@ function ExercisePanel({ task, exIdx, exState, onStart, onReset, onAccept, onSto
       {idle && exIdx!==6 && (
         <div>
           <div style={{background:T.blue1,border:`1px solid ${T.blue2}`,borderRadius:12,padding:"12px 14px",marginBottom:14}}>
-            <div style={{fontSize:12,color:T.text2,lineHeight:1.7}}>
-              <strong style={{color:T.primary}}>Exercise {exIdx}:</strong> {task.label}<br/>
-              Position the subject in frame, then press Start.
+            <div style={{fontSize:12,color:T.text2,lineHeight:1.8}}>
+              Position the elderly or patient in frame, then press Start.
               {task.needsHelper && (
-                <><br/><span style={{color:T.accent}}>👥 Helper detection is active — any additional people in frame will be counted as helpers.</span></>
+                <><br/><span style={{color:T.accent}}>👥 Helper detection is active — any additional people in frame walking closely to the elderly will be counted as helpers.</span></>
               )}
             </div>
           </div>
@@ -2322,13 +2313,12 @@ function InteliBond({ session, profile }) {
           alignItems:"center",background:T.surface,borderBottom:`1px solid ${T.border}`}}>
           <button onClick={closeGaitCamera} style={{background:"none",border:"none",color:T.primary,fontSize:13,cursor:"pointer",fontWeight:600}}>← Back</button>
           <span style={{fontSize:14,fontWeight:700}}>Gait Analysis</span>
-          <span style={{fontSize:11,color:liveApi?T.success:T.text3,fontWeight:600}}>{liveApi?"● Live":"● Simulated"}</span>
+          <div style={{width:48}}/>
         </div>
         <div className="vid-wrap" style={{margin:"16px 16px 12px",borderRadius:18,overflow:"hidden",
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
           <video ref={gaitVideoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}/>
-          <PoseBadge lms={gaitLMs}/>
           {gaitRecording&&(
             <div style={{position:"absolute",top:10,right:12,zIndex:16,background:"rgba(192,57,43,0.9)",
               borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:700,color:"#fff",
@@ -2336,10 +2326,23 @@ function InteliBond({ session, profile }) {
               <span style={{width:6,height:6,borderRadius:"50%",background:"#fff"}}/>REC {fmt(gaitElapsed)}
             </div>
           )}
-          <div style={{position:"absolute",bottom:12,left:12,right:12,zIndex:10,
-            background:"rgba(18,38,58,0.82)",borderRadius:11,padding:"8px 14px"}}>
-            <div style={{fontSize:9,color:T.accent,letterSpacing:0.8,fontWeight:600}}>MEDIAPIPE POSE · CLIENT-SIDE AI</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:2}}>Side view · Full body · 4 m walkway</div>
+        </div>
+        {/* Gait instructions strip */}
+        <div style={{margin:"0 16px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:"12px 16px"}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:8}}>Before you begin — Gait Analysis</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {[
+              {icon:"↔","text":"Position yourself side-on to the camera"},
+              {icon:"↕","text":"Ensure full body is visible in frame"},
+              {icon:"→","text":"Use a clear 4-metre walkway"},
+              {icon:"👟","text":"Walk at your normal, comfortable pace"},
+            ].map((tip,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:28,height:28,borderRadius:8,background:T.blue1,border:`1px solid ${T.blue2}`,
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{tip.icon}</div>
+                <span style={{fontSize:12,color:T.text2,lineHeight:1.4}}>{tip.text}</span>
+              </div>
+            ))}
           </div>
         </div>
         <div style={{padding:"0 16px 14px"}}>
@@ -2415,7 +2418,6 @@ function InteliBond({ session, profile }) {
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
           <video ref={assVideoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}/>
-          <PoseBadge lms={assLMs} helperCount={isRunning(exState.phase) && ct.needsHelper ? helperCount : null}/>
 
           {camError&&(
             <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.85)",zIndex:20,
@@ -2450,17 +2452,7 @@ function InteliBond({ session, profile }) {
             );
           })()}
 
-          <div style={{position:"absolute",bottom:12,left:12,right:12,zIndex:10,
-            background:"rgba(18,38,58,0.82)",borderRadius:11,padding:"8px 14px",
-            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:9,color:T.accent,letterSpacing:0.8,marginBottom:1,fontWeight:600}}>
-                EXERCISE {exIdx}
-              </div>
-              <div style={{fontSize:14,fontWeight:700,color:"#fff"}}>{ct.label}</div>
-            </div>
-            <span style={{fontSize:10,color:T.success,fontWeight:600}}>● Client-side AI</span>
-          </div>
+
         </div>
 
         <ExercisePanel
