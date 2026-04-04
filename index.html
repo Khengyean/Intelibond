@@ -1157,7 +1157,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     if (!active) {
       cancelAnimationFrame(rafRef.current);
       const cv = cvRef.current;
-      if (cv) cv.getContext("2d").clearRect(0,0,cv.width,cv.height);
+      if (cv) { cv.getContext("2d").clearRect(0,0,cv.width,cv.height); }
       return;
     }
     if (!window.Pose) { console.warn("[PoseCanvas] Pose not loaded"); return; }
@@ -1180,68 +1180,35 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
 
       const vW = vid.videoWidth  || 640;
       const vH = vid.videoHeight || 480;
-
-      // ── Size canvas to the CONTAINER (display size), not video ──
-      // This matches exactly what the user sees on screen
-      const cW = cv.parentElement ? cv.parentElement.clientWidth  : vW;
-      const cH = cv.parentElement ? cv.parentElement.clientHeight : vH;
-      if (cv.width  !== cW) cv.width  = cW;
-      if (cv.height !== cH) cv.height = cH;
+      if (cv.width  !== vW) cv.width  = vW;
+      if (cv.height !== vH) cv.height = vH;
 
       const ctx = cv.getContext("2d");
       ctx.save();
-      ctx.clearRect(0, 0, cW, cH);
+      ctx.clearRect(0, 0, vW, vH);
 
-      // ── Calculate objectFit:"cover" crop math ───────────────────
-      // cover = scale video so it fills container, crop excess
-      const scale    = Math.max(cW / vW, cH / vH);
-      const drawnW   = vW * scale;
-      const drawnH   = vH * scale;
-      const offsetX  = (cW - drawnW) / 2;  // negative = left crop
-      const offsetY  = (cH - drawnH) / 2;  // negative = top crop
-
-      // ── Draw video frame with cover behaviour ───────────────────
+      // Draw video frame directly onto canvas first.
+      // Canvas = single source of truth. No CSS objectFit mismatch.
       if (mirroredRef.current) {
-        ctx.translate(cW, 0);
+        ctx.translate(vW, 0);
         ctx.scale(-1, 1);
-        // offsetX flips for mirrored mode
-        ctx.drawImage(vid, -offsetX, offsetY, drawnW, drawnH);
-      } else {
-        ctx.drawImage(vid, offsetX, offsetY, drawnW, drawnH);
       }
+      ctx.drawImage(vid, 0, 0, vW, vH);
 
-      // ── Draw landmarks mapped to cover coordinates ──────────────
-      // MediaPipe returns normalized coords (0-1) relative to full video.
-      // We convert them to the cover-cropped display coordinates.
+      // Draw landmarks exactly on top of the video frame
       if (results.poseLandmarks) {
         const lms = results.poseLandmarks;
-
-        // Remap landmarks from normalized video space → canvas cover space
-        const remapped = lms.map(lm => {
-          let x = lm.x; // 0-1 in video space
-          // Convert to pixel in video, then to canvas cover pixel
-          const px = mirroredRef.current
-            ? cW - (x * vW * scale + offsetX)  // mirror
-            : x * vW * scale + offsetX;
-          const py = lm.y * vH * scale + offsetY;
-          return {
-            ...lm,
-            x: px / cW,  // back to normalized canvas coords
-            y: py / cH,
-          };
-        });
-
         if (window.drawConnectors && window.POSE_CONNECTIONS)
-          window.drawConnectors(ctx, remapped, window.POSE_CONNECTIONS,
+          window.drawConnectors(ctx, lms, window.POSE_CONNECTIONS,
             { color: "rgba(0,229,255,0.9)", lineWidth: 3 });
         if (window.drawLandmarks)
-          window.drawLandmarks(ctx, remapped,
+          window.drawLandmarks(ctx, lms,
             { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 2, radius: 7 });
       }
 
       ctx.restore();
 
-      // Always pass original unmirrored landmarks to state machines
+      // Pass original unmirrored landmarks to exercise state machines
       if (onLandmarks && results.poseLandmarks)
         onLandmarks(results.poseLandmarks, results.poseWorldLandmarks || null);
     });
@@ -1270,6 +1237,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     };
   }, [active]);
 
+  // Canvas renders BOTH the video and the landmarks — video element is hidden
   return <canvas ref={cvRef} style={{
     position:"absolute", top:0, left:0,
     width:"100%", height:"100%",
@@ -2434,7 +2402,7 @@ function InteliBond({ session, profile }) {
         <div className="vid-wrap" style={{margin:"16px 16px 12px",borderRadius:18,overflow:"hidden",
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
           <video ref={gaitVideoRef}
-            style={{display:"none",position:"absolute"}} playsInline muted autoPlay/>
+            style={{display:"none"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}
             mirrored={gaitFacing==="user"}/>
           {/* Flip camera button */}
@@ -2545,7 +2513,7 @@ function InteliBond({ session, profile }) {
         <div className="vid-wrap" style={{margin:"14px 16px 12px",borderRadius:18,overflow:"hidden",
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
           <video ref={assVideoRef}
-            style={{display:"none",position:"absolute"}} playsInline muted autoPlay/>
+            style={{display:"none"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}
             mirrored={assFacing==="user"}/>
           {/* Flip camera button */}
