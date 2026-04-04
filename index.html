@@ -121,10 +121,9 @@ function generatePDF({ patient, assessment, caregiverName }) {
   doc.text(patient.full_name||"Unknown", M+4, y+13);
   doc.setFont("helvetica","normal"); doc.setFontSize(8); setTxt("#4A6280");
   const patDetails = [
-    patient.dob ? `DOB: ${new Date(patient.dob).toLocaleDateString("en-MY")}` : null,
+    patient.date_of_birth ? `DOB: ${new Date(patient.date_of_birth).toLocaleDateString("en-MY")}` : null,
     patient.gender ? `Gender: ${patient.gender}` : null,
     patient.ic_number ? `IC: ${patient.ic_number}` : null,
-    patient.diagnosis ? `Dx: ${patient.diagnosis}` : null,
   ].filter(Boolean).join("   ·   ");
   doc.text(patDetails||"", M+4, y+20);
   doc.setFont("helvetica","normal"); doc.setFontSize(7); setTxt("#8BA3BE");
@@ -169,12 +168,12 @@ function generatePDF({ patient, assessment, caregiverName }) {
     doc.line(M+38, y+2, M+cw, y+2);
     y += 10;
     const gParams = [
-      { label:"Gait Speed",    val:`${assessment.gait_speed} m/s`,   lo:0.6, hi:1.3, v:assessment.gait_speed },
-      { label:"Cadence",       val:`${assessment.gait_cadence} spm`, lo:75,  hi:115, v:assessment.gait_cadence },
-      { label:"Stride Length", val:`${assessment.gait_stride_length} m`, lo:0.7, hi:1.3, v:assessment.gait_stride_length },
-      { label:"Step Width",    val:`${assessment.gait_step_width} m`, lo:0.1, hi:0.25, v:assessment.gait_step_width },
-      { label:"Symmetry",      val:`${assessment.gait_symmetry}%`,   lo:70,  hi:100, v:assessment.gait_symmetry },
-      { label:"Variability",   val:`${assessment.gait_variability}%CV`, lo:0,hi:10,  v:assessment.gait_variability },
+      { label:"Gait Speed",    val:`${assessment.gait_speed} m/s`,      lo:0.6, hi:1.3,  v:assessment.gait_speed },
+      { label:"Cadence",       val:`${assessment.cadence} spm`,          lo:75,  hi:115,  v:assessment.cadence },
+      { label:"Stride Length", val:`${assessment.stride_length} m`,      lo:0.7, hi:1.3,  v:assessment.stride_length },
+      { label:"Step Width",    val:`${assessment.step_width} m`,         lo:0.1, hi:0.25, v:assessment.step_width },
+      { label:"Symmetry",      val:`${assessment.symmetry_index}%`,      lo:70,  hi:100,  v:assessment.symmetry_index },
+      { label:"Variability",   val:`${assessment.variability}%CV`,       lo:0,   hi:10,   v:assessment.variability },
     ];
     const gcw = (cw-10)/3;
     gParams.forEach((p,i) => {
@@ -202,18 +201,17 @@ function generatePDF({ patient, assessment, caregiverName }) {
   y += 10;
 
   const MCS_LABELS = [
-    {id:"lying_to_sitting",   label:"Lying to Sitting",      max:2},
-    {id:"sitting_to_lying",   label:"Sitting to Lying",       max:2},
-    {id:"sitting_to_standing",label:"Sitting to Standing",    max:3},
-    {id:"standing",           label:"Standing",               max:3},
-    {id:"gait",               label:"Gait",                   max:3},
-    {id:"timed_walk",         label:"Timed Walk (6m)",        max:3},
-    {id:"functional_reach",   label:"Functional Reach",       max:4},
+    {id:"lying_to_sitting",   col:"mcs_lying_to_sitting",    label:"Lying to Sitting",   max:2},
+    {id:"sitting_to_lying",   col:"mcs_sitting_to_lying",    label:"Sitting to Lying",   max:2},
+    {id:"sitting_to_standing",col:"mcs_sitting_to_standing", label:"Sitting to Standing",max:3},
+    {id:"standing",           col:"mcs_standing",            label:"Standing",            max:3},
+    {id:"gait",               col:"mcs_gait",                label:"Gait",                max:3},
+    {id:"timed_walk",         col:"mcs_timed_walk",          label:"Timed Walk (6m)",     max:3},
+    {id:"functional_reach",   col:"mcs_functional_reach",    label:"Functional Reach",    max:4},
   ];
-  const scores = assessment.mcs_scores||{};
   const barW = cw - 60;
   MCS_LABELS.forEach((t,i) => {
-    const s = scores[t.id]??null;
+    const s = assessment[t.col]??null;
     const gy = y + i*10;
     setTxt("#4A6280"); doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(t.label, M, gy+5);
@@ -252,12 +250,12 @@ function generatePDF({ patient, assessment, caregiverName }) {
   y += 26;
 
   // ── notes ────────────────────────────────────────────────
-  if (assessment.clinical_note) {
+  if (assessment.notes) {
     setTxt("#8BA3BE"); doc.setFont("helvetica","bold"); doc.setFontSize(7);
     doc.text("CLINICIAN NOTES", M, y+5);
     y += 9;
     setFill("#FFFFF0"); setDraw("#F5D58A"); doc.setLineWidth(0.3);
-    const noteLines = doc.splitTextToSize(assessment.clinical_note, cw-8);
+    const noteLines = doc.splitTextToSize(assessment.notes, cw-8);
     doc.roundedRect(M,y,cw,noteLines.length*4+8,1,1,"FD");
     setTxt("#4A6280"); doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(noteLines, M+4, y+7);
@@ -296,13 +294,13 @@ function usePatients(caregiverId) {
   const addPatient = async (fields) => {
     // remap form fields to DB columns
     const payload = {
-      full_name:    fields.full_name,
-      gender:       fields.gender ? fields.gender.toLowerCase() : null,
-      date_of_birth: fields.dob || null,
-      ic_number:    fields.ic_number || null,
-      diagnosis:    fields.diagnosis || null,
-      notes:        fields.notes || null,
-      caregiver_id: caregiverId,
+      full_name:     fields.full_name,
+      age:           fields.age ? parseInt(fields.age) : null,
+      gender:        fields.gender ? fields.gender.toLowerCase() : null,
+      date_of_birth: fields.date_of_birth || null,
+      ic_number:     fields.ic_number || null,
+      notes:         fields.notes || null,
+      caregiver_id:  caregiverId,
     };
     const { data, error } = await sb.from("patients")
       .insert(payload)
@@ -353,7 +351,7 @@ function useAssessments(patientId) {
    ADD PATIENT MODAL
 ═══════════════════════════════════════════════════════════ */
 function AddPatientModal({ onAdd, onClose }) {
-  const [form, setForm] = useState({ full_name:"", dob:"", gender:"", ic_number:"", diagnosis:"", notes:"" });
+  const [form, setForm] = useState({ full_name:"", age:"", date_of_birth:"", gender:"", ic_number:"", notes:"" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
@@ -379,9 +377,9 @@ function AddPatientModal({ onAdd, onClose }) {
         {error && <div style={{background:"#FDECEA",border:"1px solid #F4B8B3",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#C0392B",marginBottom:14}}>{error}</div>}
         {[
           ["full_name","Full Name","Ahmad bin Abdullah","text",true],
-          ["ic_number","IC Number","XXXXXX-XX-XXXX","text",false],
-          ["dob","Date of Birth","","date",false],
-          ["diagnosis","Diagnosis / Condition","e.g. Stroke, Parkinson's","text",false],
+          ["ic_number","IC / Passport No.","e.g. 541029-10-1234 or A12345678","text",false],
+          ["age","Age","e.g. 72","number",false],
+          ["date_of_birth","Date of Birth","","date",false],
           ["notes","Notes","Additional clinical notes","text",false],
         ].map(([k,lbl,ph,type,req])=>(
           <div key={k} style={{marginBottom:12}}>
@@ -393,7 +391,7 @@ function AddPatientModal({ onAdd, onClose }) {
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:600,color:"#4A6280",marginBottom:5}}>Gender</div>
           <div style={{display:"flex",gap:8}}>
-            {["Male","Female","Other"].map(g=>(
+            {["Male","Female"].map(g=>(
               <button key={g} onClick={()=>set("gender",g)}
                 className={`role-btn${form.gender===g?" active":""}`}
                 style={{fontSize:12,padding:"9px 0"}}>{g}</button>
@@ -444,7 +442,7 @@ function PatientSelector({ patients, selected, onSelect, onAdd, onManage }) {
             </div>
             {selected && (
               <div style={{fontSize:10,color:"#8BA3BE",marginTop:2}}>
-                {[selected.gender, selected.dob?`DOB: ${new Date(selected.dob).toLocaleDateString("en-MY")}`:null, selected.diagnosis].filter(Boolean).join(" · ")||"No details added"}
+                {[selected.gender, selected.date_of_birth?`DOB: ${new Date(selected.date_of_birth).toLocaleDateString("en-MY")}`:null, selected.ic_number?`IC: ${selected.ic_number}`:null].filter(Boolean).join(" · ")||"No details added"}
               </div>
             )}
           </div>
@@ -494,7 +492,7 @@ function PatientListScreen({ patients, selected, onSelect, onAdd, onDelete, onBa
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:700,color:"#12263A"}}>{p.full_name}</div>
                   <div style={{fontSize:11,color:"#8BA3BE",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    {[p.gender,p.dob?`b. ${new Date(p.dob).getFullYear()}`:null,p.diagnosis].filter(Boolean).join(" · ")||"No details"}
+                    {[p.gender,p.date_of_birth?`b. ${new Date(p.date_of_birth).getFullYear()}`:null,p.ic_number?`IC: ${p.ic_number}`:null].filter(Boolean).join(" · ")||"No details"}
                   </div>
                 </div>
                 {isSel && <div style={{fontSize:10,background:"#EBF3FF",border:"1px solid #C8DEFF",color:"#1A6FBF",
@@ -537,13 +535,13 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
   const mcsC        = s => s>=14?"#0D7A5F":s>=8?"#C97B00":"#C0392B";
 
   const MCS_LABELS = [
-    {id:"lying_to_sitting",    label:"Lying→Sitting",    max:2},
-    {id:"sitting_to_lying",    label:"Sitting→Lying",    max:2},
-    {id:"sitting_to_standing", label:"Sit→Stand",        max:3},
-    {id:"standing",            label:"Standing",          max:3},
-    {id:"gait",                label:"Gait",              max:3},
-    {id:"timed_walk",          label:"Timed Walk",        max:3},
-    {id:"functional_reach",    label:"Reach",             max:4},
+    {id:"lying_to_sitting",    col:"mcs_lying_to_sitting",    label:"Lying→Sitting",  max:2},
+    {id:"sitting_to_lying",    col:"mcs_sitting_to_lying",    label:"Sitting→Lying",  max:2},
+    {id:"sitting_to_standing", col:"mcs_sitting_to_standing", label:"Sit→Stand",      max:3},
+    {id:"standing",            col:"mcs_standing",            label:"Standing",        max:3},
+    {id:"gait",                col:"mcs_gait",                label:"Gait",            max:3},
+    {id:"timed_walk",          col:"mcs_timed_walk",          label:"Timed Walk",      max:3},
+    {id:"functional_reach",    col:"mcs_functional_reach",    label:"Reach",           max:4},
   ];
 
   return (
@@ -576,7 +574,6 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
           const fb = a.frailty_level ? frailtyBg(a.frailty_level) : "#F4F8FD";
           const fdBd = a.frailty_level ? frailtyBd(a.frailty_level) : "#D0E0EF";
           const mc = mcsC(a.mcs_total??0);
-          const scores = a.mcs_scores||{};
           return (
             <div key={a.id} style={{background:"#fff",borderRadius:16,border:"1px solid #D0E0EF",
               marginBottom:10,overflow:"hidden"}}>
@@ -615,12 +612,12 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
                       <div style={{fontSize:9,fontWeight:700,letterSpacing:1,color:"#8BA3BE",marginBottom:8}}>GAIT PARAMETERS</div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                         {[
-                          {l:"Speed",v:a.gait_speed,u:"m/s"},
-                          {l:"Cadence",v:a.gait_cadence,u:"spm"},
-                          {l:"Stride",v:a.gait_stride_length,u:"m"},
-                          {l:"Step W.",v:a.gait_step_width,u:"m"},
-                          {l:"Symmetry",v:a.gait_symmetry,u:"%"},
-                          {l:"Variab.",v:a.gait_variability,u:"%CV"},
+                          {l:"Speed",    v:a.gait_speed,    u:"m/s"},
+                          {l:"Cadence",  v:a.cadence,       u:"spm"},
+                          {l:"Stride",   v:a.stride_length, u:"m"},
+                          {l:"Step W.",  v:a.step_width,    u:"m"},
+                          {l:"Symmetry", v:a.symmetry_index,u:"%"},
+                          {l:"Variab.",  v:a.variability,   u:"%CV"},
                         ].map(g=>(
                           <div key={g.l} style={{background:"#F4F8FD",borderRadius:8,padding:"7px 8px",textAlign:"center"}}>
                             <div style={{fontSize:8,color:"#8BA3BE",fontWeight:600,marginBottom:2}}>{g.l.toUpperCase()}</div>
@@ -631,11 +628,11 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
                     </div>
                   )}
 
-                  {/* MCS scores */}
+                  {/* MCS scores — read from individual columns */}
                   <div style={{marginBottom:14}}>
                     <div style={{fontSize:9,fontWeight:700,letterSpacing:1,color:"#8BA3BE",marginBottom:8}}>MCS EXERCISE SCORES</div>
                     {MCS_LABELS.map(t=>{
-                      const s=scores[t.id]; const pct=s!=null?Math.round((s/t.max)*100):null;
+                      const s=a[t.col]; const pct=s!=null?Math.round((s/t.max)*100):null;
                       const c=pct==null?"#D0E0EF":pct>=67?"#0D7A5F":pct>=34?"#C97B00":"#C0392B";
                       return (
                         <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
@@ -651,11 +648,11 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
                     })}
                   </div>
 
-                  {/* Clinical note */}
-                  {a.clinical_note && (
+                  {/* Clinician note — DB col is notes */}
+                  {a.notes && (
                     <div style={{background:"#FFFFF0",border:"1px solid #F5D58A",borderRadius:8,padding:"8px 12px",
                       marginBottom:12,fontSize:11,color:"#4A6280",lineHeight:1.6}}>
-                      <strong style={{color:"#C97B00"}}>Note: </strong>{a.clinical_note}
+                      <strong style={{color:"#C97B00"}}>Note: </strong>{a.notes}
                     </div>
                   )}
 
@@ -1828,7 +1825,9 @@ function ExercisePanel({ task, exIdx, exState, onStart, onReset, onAccept, onSto
 /* ═══════════════════════════════════════════════════════════
    PROFILE EDIT FORM — defined outside InteliBond to prevent re-mount on re-render
 ═══════════════════════════════════════════════════════════ */
-function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSaved, onSave, session }) {
+function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSaved, onSave, session, role }) {
+  const isElderly = role === "elderly";
+
   return (
     <div style={{background:"#FFFFFF",border:"1px solid #D0E0EF",borderRadius:18,padding:"20px",marginBottom:12}}>
       <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"#8BA3BE",marginBottom:16}}>PERSONAL INFO</div>
@@ -1850,24 +1849,28 @@ function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSa
           value={profileData.full_name}
           onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,full_name:v}));}}/>
       </div>
+
       <div style={{marginBottom:14}}>
         <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Phone</div>
         <input className="auth-input" type="tel" placeholder="+60 12-345 6789"
           value={profileData.phone}
           onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,phone:v}));}}/>
       </div>
+
       <div style={{marginBottom:14}}>
         <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Age</div>
         <input className="auth-input" type="number" placeholder="e.g. 72"
           value={profileData.age}
           onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,age:v}));}}/>
       </div>
+
       <div style={{marginBottom:14}}>
         <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Date of Birth</div>
         <input className="auth-input" type="date"
           value={profileData.date_of_birth}
           onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,date_of_birth:v}));}}/>
       </div>
+
       <div style={{marginBottom:14}}>
         <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:8}}>Gender</div>
         <div style={{display:"flex",gap:10}}>
@@ -1880,23 +1883,64 @@ function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSa
         </div>
       </div>
 
-      <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"#8BA3BE",margin:"20px 0 14px"}}>MEDICAL INFO</div>
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Medical Conditions</div>
-        <textarea className="auth-input" rows={3}
-          placeholder="e.g. Hypertension, Type 2 Diabetes, Osteoporosis"
-          value={profileData.medical_conditions}
-          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medical_conditions:v}));}}
-          style={{resize:"none",fontFamily:"inherit"}}/>
-      </div>
-      <div style={{marginBottom:20}}>
-        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Current Medications</div>
-        <textarea className="auth-input" rows={3}
-          placeholder="e.g. Metformin 500mg, Amlodipine 5mg"
-          value={profileData.medications}
-          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medications:v}));}}
-          style={{resize:"none",fontFamily:"inherit"}}/>
-      </div>
+      {/* Elderly-only: IC number + medical info */}
+      {isElderly && (
+        <>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>
+              IC / Passport No.
+              <span style={{fontSize:10,color:"#8BA3BE",fontWeight:400}}> (NRIC or passport for foreigners)</span>
+            </div>
+            <input className="auth-input" type="text" placeholder="e.g. 541029-10-1234"
+              value={profileData.ic_number}
+              onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,ic_number:v}));}}/>
+          </div>
+
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"#8BA3BE",margin:"20px 0 14px"}}>MEDICAL INFO</div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Medical Conditions</div>
+            <textarea className="auth-input" rows={3}
+              placeholder="e.g. Hypertension, Type 2 Diabetes, Osteoporosis"
+              value={profileData.medical_conditions}
+              onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medical_conditions:v}));}}
+              style={{resize:"none",fontFamily:"inherit"}}/>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Current Medications</div>
+            <textarea className="auth-input" rows={3}
+              placeholder="e.g. Metformin 500mg, Amlodipine 5mg"
+              value={profileData.medications}
+              onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medications:v}));}}
+              style={{resize:"none",fontFamily:"inherit"}}/>
+          </div>
+        </>
+      )}
+
+      {/* Caregiver-only: relationship */}
+      {!isElderly && (
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:8}}>
+            Relationship to Patient
+            <span style={{fontSize:10,color:"#8BA3BE",fontWeight:400}}> (optional)</span>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {["Children","Spouse","Caregiver Staff","Nurse","Physiotherapist","Other"].map(r=>(
+              <button key={r} onClick={()=>setProfileData(p=>({...p,relationship:r}))}
+                style={{padding:"8px 14px",borderRadius:20,border:`1.5px solid ${profileData.relationship===r?"#1A6FBF":"#D0E0EF"}`,
+                  background:profileData.relationship===r?"#EBF3FF":"#F4F8FD",
+                  color:profileData.relationship===r?"#1A6FBF":"#4A6280",
+                  fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                {r}
+              </button>
+            ))}
+          </div>
+          {/* Allow custom entry */}
+          <input className="auth-input" type="text" placeholder="Or type custom relationship…"
+            value={["Children","Spouse","Caregiver Staff","Nurse","Physiotherapist","Other"].includes(profileData.relationship)?"":profileData.relationship}
+            onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,relationship:v}));}}
+            style={{marginTop:10}}/>
+        </div>
+      )}
 
       <button className="auth-btn" disabled={profileSaving} onClick={onSave}
         style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
@@ -1917,7 +1961,8 @@ function InteliBond({ session, profile }) {
   const [tab, setTab]             = useState("assessment");
   const [profileData, setProfileData] = useState({
     full_name:"", phone:"", age:"", gender:"",
-    date_of_birth:"", medical_conditions:"", medications:""
+    date_of_birth:"", medical_conditions:"", medications:"",
+    ic_number:"", relationship:""
   });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved,  setProfileSaved]  = useState(false);
@@ -2142,13 +2187,15 @@ function InteliBond({ session, profile }) {
     sb.from("profiles").select("*").eq("id", session.user.id).single()
       .then(({data})=>{
         if (data) setProfileData({
-          full_name: data.full_name||"",
-          phone: data.phone||"",
-          age: data.age||"",
-          gender: data.gender||"",
-          date_of_birth: data.date_of_birth||"",
+          full_name:          data.full_name||"",
+          phone:              data.phone||"",
+          age:                data.age||"",
+          gender:             data.gender||"",
+          date_of_birth:      data.date_of_birth||"",
           medical_conditions: data.medical_conditions||"",
-          medications: data.medications||"",
+          medications:        data.medications||"",
+          ic_number:          data.ic_number||"",
+          relationship:       data.relationship||"",
         });
       });
   },[session]);
@@ -2165,36 +2212,76 @@ function InteliBond({ session, profile }) {
 
   const saveProfileData = async () => {
     setProfileSaving(true);
-    await sb.from("profiles").update({
-      full_name:          profileData.full_name,
-      phone:              profileData.phone||null,
-      age:                profileData.age ? parseInt(profileData.age) : null,
-      gender:             profileData.gender||null,
-      date_of_birth:      profileData.date_of_birth||null,
-      medical_conditions: profileData.medical_conditions||null,
-      medications:        profileData.medications||null,
-    }).eq("id", session.user.id);
-    setProfileSaving(false); setProfileSaved(true);
+
+    // Build profile update payload — role-aware
+    const profilePayload = {
+      full_name:     profileData.full_name,
+      phone:         profileData.phone||null,
+      age:           profileData.age ? parseInt(profileData.age) : null,
+      gender:        profileData.gender||null,
+      date_of_birth: profileData.date_of_birth||null,
+    };
+    // Elderly-only fields
+    if (profile?.role === "elderly") {
+      profilePayload.ic_number          = profileData.ic_number||null;
+      profilePayload.medical_conditions = profileData.medical_conditions||null;
+      profilePayload.medications        = profileData.medications||null;
+    }
+    // Caregiver-only fields
+    if (profile?.role !== "elderly") {
+      profilePayload.relationship = profileData.relationship||null;
+    }
+
+    await sb.from("profiles")
+      .update(profilePayload)
+      .eq("id", session.user.id);
+
+    // For elderly users: sync their profile data into the patients table
+    // so caregivers can select them as a patient in assessments
+    if (profile?.role === "elderly") {
+      const patientPayload = {
+        full_name:     profileData.full_name,
+        age:           profileData.age ? parseInt(profileData.age) : null,
+        gender:        profileData.gender||null,
+        date_of_birth: profileData.date_of_birth||null,
+        ic_number:     profileData.ic_number||null,
+        profile_id:    session.user.id,
+      };
+      // Upsert: update if a patient row with this profile_id already exists
+      await sb.from("patients")
+        .upsert(patientPayload, { onConflict: "profile_id" });
+    }
+
+    setProfileSaving(false);
+    setProfileSaved(true);
     setTimeout(()=>setProfileSaved(false), 2500);
   };
 
   /* ── Persist assessment to Supabase ───────────────── */
   const handleSaveAssessment = useCallback(async (clinicalNote) => {
+    const scores = taskScores;
     const payload = {
       patient_id:          selectedPatient?.id,
-      caregiver_id:        session?.user?.id,
+      assessed_by:         session?.user?.id,          // DB col is assessed_by, not caregiver_id
       assessed_at:         new Date().toISOString(),
       frailty_level:       frailty?.level ?? null,
       frailty_confidence:  frailty?.confidence ?? null,
       gait_speed:          gaitData?.speed ?? null,
-      gait_cadence:        gaitData?.cadence ?? null,
-      gait_stride_length:  gaitData?.stride_length ?? null,
-      gait_step_width:     gaitData?.step_width ?? null,
-      gait_symmetry:       gaitData?.symmetry_index ?? null,
-      gait_variability:    gaitData?.variability ?? null,
-      mcs_total:           Object.values(taskScores).reduce((a,b)=>a+b,0),
-      mcs_scores:          taskScores,
-      clinical_note:       clinicalNote || null,
+      cadence:             gaitData?.cadence ?? null,  // DB col is cadence
+      stride_length:       gaitData?.stride_length ?? null,
+      step_width:          gaitData?.step_width ?? null,
+      symmetry_index:      gaitData?.symmetry_index ?? null,
+      variability:         gaitData?.variability ?? null,
+      // Individual MCS columns instead of jsonb
+      mcs_lying_to_sitting:   scores["lying_to_sitting"]   ?? null,
+      mcs_sitting_to_lying:   scores["sitting_to_lying"]   ?? null,
+      mcs_sitting_to_standing:scores["sitting_to_standing"]?? null,
+      mcs_standing:           scores["standing"]            ?? null,
+      mcs_gait:               scores["gait"]                ?? null,
+      mcs_timed_walk:         scores["timed_walk"]          ?? null,
+      mcs_functional_reach:   scores["functional_reach"]    ?? null,
+      mcs_total:           MCS_TASKS.reduce((s,t)=>s+(scores[t.id]??0),0),
+      notes:               clinicalNote || null,        // DB col is notes, not clinical_note
     };
     return await saveAssessment(payload);
   }, [selectedPatient, session, frailty, gaitData, taskScores, saveAssessment]);
@@ -2593,6 +2680,13 @@ function InteliBond({ session, profile }) {
                 </div>
                 <div style={{fontSize:18,fontWeight:800,color:T.text}}>{displayName}</div>
                 <div style={{fontSize:12,color:T.text3,marginTop:4,textTransform:"capitalize"}}>{role}</div>
+                {role!=="elderly" && profileData.relationship && (
+                  <div style={{display:"inline-block",marginTop:8,background:T.blue1,
+                    border:`1px solid ${T.blue2}`,borderRadius:20,padding:"4px 14px",
+                    fontSize:11,fontWeight:700,color:T.primary}}>
+                    {profileData.relationship}
+                  </div>
+                )}
               </div>
 
               {/* Personal info display */}
@@ -2604,17 +2698,24 @@ function InteliBond({ session, profile }) {
                 <InfoRow label="Age"           value={profileData.age ? `${profileData.age} years old` : ""}/>
                 <InfoRow label="Date of Birth" value={profileData.date_of_birth}/>
                 <InfoRow label="Gender"        value={profileData.gender ? profileData.gender.charAt(0).toUpperCase()+profileData.gender.slice(1) : ""}/>
+                {role==="elderly" && (
+                  <InfoRow label="IC / Passport" value={profileData.ic_number}/>
+                )}
+                {role!=="elderly" && (
+                  <InfoRow label="Relationship"  value={profileData.relationship}/>
+                )}
               </div>
 
-              {/* Medical info display */}
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,
-                padding:"4px 20px",marginBottom:12}}>
-                <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:T.text3,
-                  padding:"14px 0 8px"}}>MEDICAL INFO</div>
-                <InfoRow label="Conditions"   value={profileData.medical_conditions}/>
-                <InfoRow label="Medications"  value={profileData.medications}/>
-              </div>
-
+              {/* Medical info — elderly only */}
+              {role==="elderly" && (
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,
+                  padding:"4px 20px",marginBottom:12}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:T.text3,
+                    padding:"14px 0 8px"}}>MEDICAL INFO</div>
+                  <InfoRow label="Conditions"  value={profileData.medical_conditions}/>
+                  <InfoRow label="Medications" value={profileData.medications}/>
+                </div>
+              )}
             </>
           )}
 
@@ -2626,6 +2727,7 @@ function InteliBond({ session, profile }) {
               profileSaving={profileSaving}
               profileSaved={profileSaved}
               session={session}
+              role={role}
               onSave={async()=>{ await saveProfileData(); setTimeout(()=>setProfileEditing(false), 600); }}
             />
           )}
@@ -2820,12 +2922,23 @@ function InteliBond({ session, profile }) {
               <button onClick={()=>generatePDF({
                   patient: selectedPatient||{full_name:"Unknown Patient"},
                   assessment:{
-                    assessed_at:new Date().toISOString(),
-                    frailty_level:frailty?.level, frailty_confidence:frailty?.confidence,
-                    gait_speed:gaitData?.speed, gait_cadence:gaitData?.cadence,
-                    gait_stride_length:gaitData?.stride_length, gait_step_width:gaitData?.step_width,
-                    gait_symmetry:gaitData?.symmetry_index, gait_variability:gaitData?.variability,
-                    mcs_total:mcsTotal, mcs_scores:taskScores,
+                    assessed_at:         new Date().toISOString(),
+                    frailty_level:       frailty?.level,
+                    frailty_confidence:  frailty?.confidence,
+                    gait_speed:          gaitData?.speed,
+                    cadence:             gaitData?.cadence,
+                    stride_length:       gaitData?.stride_length,
+                    step_width:          gaitData?.step_width,
+                    symmetry_index:      gaitData?.symmetry_index,
+                    variability:         gaitData?.variability,
+                    mcs_total:           mcsTotal,
+                    mcs_lying_to_sitting:    taskScores["lying_to_sitting"]??null,
+                    mcs_sitting_to_lying:    taskScores["sitting_to_lying"]??null,
+                    mcs_sitting_to_standing: taskScores["sitting_to_standing"]??null,
+                    mcs_standing:            taskScores["standing"]??null,
+                    mcs_gait:                taskScores["gait"]??null,
+                    mcs_timed_walk:          taskScores["timed_walk"]??null,
+                    mcs_functional_reach:    taskScores["functional_reach"]??null,
                   },
                   caregiverName:profile?.full_name||session?.user?.email
                 })}
