@@ -1898,8 +1898,15 @@ function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSa
           style={{resize:"none",fontFamily:"inherit"}}/>
       </div>
 
-      <button className="auth-btn" disabled={profileSaving} onClick={onSave}>
-        {profileSaving?"Saving…":profileSaved?"Saved!":"Save Changes"}
+      <button className="auth-btn" disabled={profileSaving} onClick={onSave}
+        style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+        {profileSaving ? (
+          <>
+            <span style={{width:14,height:14,border:"2px solid rgba(255,255,255,0.4)",borderTopColor:"#fff",
+              borderRadius:"50%",display:"inline-block",animation:"spin 0.7s linear infinite"}}/>
+            Saving…
+          </>
+        ) : profileSaved ? "✓ Saved!" : "Save & Back"}
       </button>
     </div>
   );
@@ -2608,11 +2615,6 @@ function InteliBond({ session, profile }) {
                 <InfoRow label="Medications"  value={profileData.medications}/>
               </div>
 
-              <button onClick={()=>setProfileEditing(true)}
-                style={{width:"100%",padding:"13px",borderRadius:13,border:`1.5px solid ${T.blue2}`,
-                  background:T.blue1,color:T.primary,fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
-                Edit Profile
-              </button>
             </>
           )}
 
@@ -2624,7 +2626,7 @@ function InteliBond({ session, profile }) {
               profileSaving={profileSaving}
               profileSaved={profileSaved}
               session={session}
-              onSave={async()=>{ await saveProfileData(); setProfileEditing(false); }}
+              onSave={async()=>{ await saveProfileData(); setTimeout(()=>setProfileEditing(false), 600); }}
             />
           )}
 
