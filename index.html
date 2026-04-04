@@ -163,20 +163,24 @@ function generatePDF({ patient, assessment, caregiverName }) {
   y += 37;
 
   // ── gait parameters ──────────────────────────────────────
-  if (assessment.gait_speed != null) {
+  const _hasGait = (assessment.gait_speed??assessment.gait_speed) != null;
+  if (_hasGait) {
     setTxt("#8BA3BE"); doc.setFont("helvetica","bold"); doc.setFontSize(7);
     doc.text("GAIT PARAMETERS", M, y+5);
     setDraw("#D0E0EF"); doc.setLineWidth(0.3);
     doc.line(M+38, y+2, M+cw, y+2);
     y += 10;
+    // Accept both DB column names and live-export names
+    const _speed   = assessment.gait_speed     ?? null;
+    const _cadence = assessment.gait_cadence   ?? assessment.cadence        ?? null;
+    const _stride  = assessment.gait_stride_length ?? assessment.stride_length ?? null;
+    const _sym     = assessment.gait_symmetry  ?? assessment.symmetry_index ?? null;
     const gParams = [
-      { label:"Gait Speed",    val:`${assessment.gait_speed} m/s`,      lo:0.6, hi:1.3,  v:assessment.gait_speed },
-      { label:"Cadence",       val:`${assessment.cadence} spm`,          lo:75,  hi:115,  v:assessment.cadence },
-      { label:"Stride Length", val:`${assessment.stride_length} m`,      lo:0.7, hi:1.3,  v:assessment.stride_length },
-      { label:"Step Width",    val:`${assessment.step_width} m`,         lo:0.1, hi:0.25, v:assessment.step_width },
-      { label:"Symmetry",      val:`${assessment.symmetry_index}%`,      lo:70,  hi:100,  v:assessment.symmetry_index },
-      { label:"Variability",   val:`${assessment.variability}%CV`,       lo:0,   hi:10,   v:assessment.variability },
-    ];
+      { label:"Gait Speed",    val:_speed!=null?`${_speed} m/s`:"—",     lo:0.6, hi:1.3,  v:_speed },
+      { label:"Cadence",       val:_cadence!=null?`${_cadence} spm`:"—", lo:75,  hi:115,  v:_cadence },
+      { label:"Stride Length", val:_stride!=null?`${_stride} m`:"—",     lo:0.7, hi:1.3,  v:_stride },
+      { label:"Symmetry",      val:_sym!=null?`${_sym}%`:"—",            lo:70,  hi:100,  v:_sym },
+    ].filter(p => p.v != null);
     const gcw = (cw-10)/3;
     gParams.forEach((p,i) => {
       const col = i%3, row = Math.floor(i/3);
@@ -213,7 +217,7 @@ function generatePDF({ patient, assessment, caregiverName }) {
   ];
   const barW = cw - 60;
   MCS_LABELS.forEach((t,i) => {
-    const s = assessment[t.col]??null;
+    const s = assessment[t.col] ?? (assessment.mcs_scores?.[t.id]) ?? null;
     const gy = y + i*10;
     setTxt("#4A6280"); doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(t.label, M, gy+5);
@@ -252,12 +256,13 @@ function generatePDF({ patient, assessment, caregiverName }) {
   y += 26;
 
   // ── notes ────────────────────────────────────────────────
-  if (assessment.notes) {
+  const _note = assessment.notes ?? assessment.clinical_note ?? null;
+  if (_note) {
     setTxt("#8BA3BE"); doc.setFont("helvetica","bold"); doc.setFontSize(7);
     doc.text("CLINICIAN NOTES", M, y+5);
     y += 9;
     setFill("#FFFFF0"); setDraw("#F5D58A"); doc.setLineWidth(0.3);
-    const noteLines = doc.splitTextToSize(assessment.notes, cw-8);
+    const noteLines = doc.splitTextToSize(_note, cw-8);
     doc.roundedRect(M,y,cw,noteLines.length*4+8,1,1,"FD");
     setTxt("#4A6280"); doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(noteLines, M+4, y+7);
@@ -617,9 +622,9 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
                           {l:"Speed",    v:a.gait_speed,    u:"m/s"},
                           {l:"Cadence",  v:a.cadence,       u:"spm"},
                           {l:"Stride",   v:a.stride_length, u:"m"},
-                          {l:"Step W.",  v:a.step_width,    u:"m"},
+
                           {l:"Symmetry", v:a.symmetry_index,u:"%"},
-                          {l:"Variab.",  v:a.variability,   u:"%CV"},
+
                         ].map(g=>(
                           <div key={g.l} style={{background:"#F4F8FD",borderRadius:8,padding:"7px 8px",textAlign:"center"}}>
                             <div style={{fontSize:8,color:"#8BA3BE",fontWeight:600,marginBottom:2}}>{g.l.toUpperCase()}</div>
@@ -704,7 +709,7 @@ function SaveAssessmentModal({ patient, frailty, gaitData, mcsTotal, taskScores,
         <div style={{fontSize:48,marginBottom:12}}>✅</div>
         <div style={{fontSize:18,fontWeight:700,color:"#12263A",marginBottom:6}}>Assessment Saved!</div>
         <div style={{fontSize:13,color:"#8BA3BE",marginBottom:24}}>
-          Saved for <strong style={{color:"#12263A"}}>{patient.full_name}</strong>
+          Saved for <strong style={{color:"#12263A"}}>{patient?.full_name||"your record"}</strong>
         </div>
         <div style={{display:"flex",gap:10}}>
           <button onClick={onClose}
@@ -727,7 +732,7 @@ function SaveAssessmentModal({ patient, frailty, gaitData, mcsTotal, taskScores,
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,color:"#8BA3BE",cursor:"pointer"}}>×</button>
         </div>
 
-        {!patient ? (
+        {(!patient && isCaregiver) ? (
           <div style={{background:"#FDECEA",border:"1px solid #F4B8B3",borderRadius:10,padding:"12px 14px",
             fontSize:13,color:"#C0392B",marginBottom:14}}>
             ⚠ Please select a patient first before saving.
@@ -1141,10 +1146,14 @@ function useHelperTracker() {
    MEDIAPIPE POSE CANVAS
 ═══════════════════════════════════════════════════════════ */
 function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
-  const cvRef   = useRef(null);
-  const poseRef = useRef(null);
-  const rafRef  = useRef(null);
-  const readyR  = useRef(false);
+  const cvRef      = useRef(null);
+  const poseRef    = useRef(null);
+  const rafRef     = useRef(null);
+  const readyR     = useRef(false);
+  const mirroredRef = useRef(mirrored); // keep ref fresh without re-init
+
+  // Update mirroredRef whenever prop changes — no need to restart pose
+  useEffect(() => { mirroredRef.current = mirrored; }, [mirrored]);
 
   useEffect(() => {
     if (!active) {
@@ -1165,20 +1174,34 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     pose.onResults(results => {
       const cv = cvRef.current; if (!cv) return;
       const vid = videoRef.current;
-      if (vid) { cv.width = vid.videoWidth||640; cv.height = vid.videoHeight||480; }
+      const W = vid?.videoWidth  || 640;
+      const H = vid?.videoHeight || 480;
+      // Only resize canvas if dimensions actually changed — avoids flicker
+      if (cv.width !== W) cv.width = W;
+      if (cv.height !== H) cv.height = H;
+
       const ctx = cv.getContext("2d");
-      ctx.clearRect(0,0,cv.width,cv.height);
+      ctx.clearRect(0, 0, W, H);
       if (!results.poseLandmarks) return;
+
+      const lms = results.poseLandmarks;
+
+      // When front camera is used, video is CSS-mirrored (scaleX -1).
+      // Canvas is NOT CSS-mirrored. So we must mirror landmark X coords
+      // manually so they align with what the user sees on screen.
+      const drawLms = mirroredRef.current
+        ? lms.map(lm => ({ ...lm, x: 1 - lm.x }))
+        : lms;
+
       if (window.drawConnectors && window.POSE_CONNECTIONS)
-        window.drawConnectors(ctx, results.poseLandmarks, window.POSE_CONNECTIONS,
+        window.drawConnectors(ctx, drawLms, window.POSE_CONNECTIONS,
           { color:"rgba(0,229,255,0.9)", lineWidth:2.5 });
       if (window.drawLandmarks)
-        window.drawLandmarks(ctx, results.poseLandmarks,
+        window.drawLandmarks(ctx, drawLms,
           { color:"#FFD600", fillColor:"#FF6D00", lineWidth:1, radius:5 });
-      
 
-      
-      if (onLandmarks) onLandmarks(results.poseLandmarks, results.poseWorldLandmarks||null);
+      // Pass ORIGINAL (unflipped) landmarks to state machines for correct math
+      if (onLandmarks) onLandmarks(lms, results.poseWorldLandmarks||null);
     });
 
     pose.initialize().then(() => {
@@ -1198,7 +1221,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     return () => { stopped=true; cancelAnimationFrame(rafRef.current); readyR.current=false; try{pose.close();}catch(_){} };
   }, [active]);
 
-  return <canvas ref={cvRef} className={`pose-canvas${mirrored?' canvas-mirrored':''}`}/>;
+  return <canvas ref={cvRef} className="pose-canvas"/>;
 }
 
 /* ─── Pose badge ─────────────────────────────────── */
@@ -1965,6 +1988,16 @@ function InteliBond({ session, profile }) {
 
   // Define early so all tab screens can use it
   const isCaregiver = profile?.role !== "elderly";
+
+  // For elderly users, build a patient-shaped object from their own profile data
+  // so it can be passed wherever a "patient" record is needed (PDF, save modal, etc.)
+  const effectiveProfile = !isCaregiver ? {
+    full_name:     profileData.full_name || profile?.full_name || session?.user?.email || "Patient",
+    date_of_birth: profileData.date_of_birth || null,
+    gender:        profileData.gender || null,
+    ic_number:     profileData.ic_number || null,
+    id:            session?.user?.id,
+  } : null;
   const [gaitRecording, setGaitR] = useState(false);
   const [gaitElapsed, setGaitE]   = useState(0);
   const [gaitData, setGaitData]   = useState(null);
@@ -2013,7 +2046,11 @@ function InteliBond({ session, profile }) {
   const [historyPatient, setHistoryPatient]   = useState(null);
   const caregiverId = profile?.role!=="elderly" ? session?.user?.id : null;
   const { patients, loading:pLoading, addPatient, deletePatient } = usePatients(caregiverId);
-  const { assessments, loading:aLoading, saveAssessment } = useAssessments(historyPatient?.id ?? selectedPatient?.id);
+  // Elderly: query by their own user id; Caregiver: by selected/history patient
+  const assessmentPatientId = isCaregiver
+    ? (historyPatient?.id ?? selectedPatient?.id)
+    : session?.user?.id;
+  const { assessments, loading:aLoading, saveAssessment } = useAssessments(assessmentPatientId);
 
   const [exStates, setExStates] = useState({
     1:{...EX_INITIAL[1]}, 2:{...EX_INITIAL[2]}, 3:{...EX_INITIAL[3]},
@@ -2174,9 +2211,7 @@ function InteliBond({ session, profile }) {
             speed:parseFloat((0.88+(Math.random()-0.5)*0.08).toFixed(2)),
             cadence:parseFloat((101+(Math.random()-0.5)*6).toFixed(1)),
             stride_length:parseFloat((1.02+(Math.random()-0.5)*0.06).toFixed(2)),
-            step_width:parseFloat((0.17+(Math.random()-0.5)*0.02).toFixed(2)),
             symmetry_index:parseFloat((93+(Math.random()-0.5)*4).toFixed(1)),
-            variability:parseFloat((3.8+(Math.random()-0.5)*1.5).toFixed(1)),
             cadence_history:Array.from({length:12},(_,i)=>parseFloat((101+Math.sin(i/2)*3+(Math.random()-0.5)*2).toFixed(1))),
           });
         }
@@ -2279,31 +2314,31 @@ function InteliBond({ session, profile }) {
   /* ── Persist assessment to Supabase ───────────────── */
   const handleSaveAssessment = useCallback(async (clinicalNote) => {
     const scores = taskScores;
+    // Elderly save to their own profile; caregiver saves to selected patient
+    const patientId = isCaregiver ? selectedPatient?.id : session?.user?.id;
     const payload = {
-      patient_id:          selectedPatient?.id,
-      assessed_by:         session?.user?.id,          // DB col is assessed_by, not caregiver_id
-      assessed_at:         new Date().toISOString(),
-      frailty_level:       frailty?.level ?? null,
-      frailty_confidence:  frailty?.confidence ?? null,
-      gait_speed:          gaitData?.speed ?? null,
-      cadence:             gaitData?.cadence ?? null,  // DB col is cadence
-      stride_length:       gaitData?.stride_length ?? null,
-      step_width:          gaitData?.step_width ?? null,
-      symmetry_index:      gaitData?.symmetry_index ?? null,
-      variability:         gaitData?.variability ?? null,
-      // Individual MCS columns instead of jsonb
-      mcs_lying_to_sitting:   scores["lying_to_sitting"]   ?? null,
-      mcs_sitting_to_lying:   scores["sitting_to_lying"]   ?? null,
-      mcs_sitting_to_standing:scores["sitting_to_standing"]?? null,
-      mcs_standing:           scores["standing"]            ?? null,
-      mcs_gait:               scores["gait"]                ?? null,
-      mcs_timed_walk:         scores["timed_walk"]          ?? null,
-      mcs_functional_reach:   scores["functional_reach"]    ?? null,
-      mcs_total:           MCS_TASKS.reduce((s,t)=>s+(scores[t.id]??0),0),
-      notes:               clinicalNote || null,        // DB col is notes, not clinical_note
+      patient_id:           patientId,
+      caregiver_id:         session?.user?.id,
+      assessed_at:          new Date().toISOString(),
+      frailty_level:        frailty?.level ?? null,
+      frailty_confidence:   frailty?.confidence ?? null,
+      gait_speed:           gaitData?.speed ?? null,
+      gait_cadence:         gaitData?.cadence ?? null,
+      gait_stride_length:   gaitData?.stride_length ?? null,
+      gait_symmetry:        gaitData?.symmetry_index ?? null,
+      mcs_scores:           scores,
+      mcs_lying_to_sitting:    scores["lying_to_sitting"]    ?? null,
+      mcs_sitting_to_lying:    scores["sitting_to_lying"]    ?? null,
+      mcs_sitting_to_standing: scores["sitting_to_standing"] ?? null,
+      mcs_standing:            scores["standing"]             ?? null,
+      mcs_gait:                scores["gait"]                 ?? null,
+      mcs_timed_walk:          scores["timed_walk"]           ?? null,
+      mcs_functional_reach:    scores["functional_reach"]     ?? null,
+      mcs_total:            MCS_TASKS.reduce((s,t)=>s+(scores[t.id]??0),0),
+      clinical_note:        clinicalNote || null,
     };
     return await saveAssessment(payload);
-  }, [selectedPatient, session, frailty, gaitData, taskScores, saveAssessment]);
+  }, [isCaregiver, selectedPatient, session, frailty, gaitData, taskScores, saveAssessment]);
 
   /* ─ patient list / history views ──────────────────── */
   if (view==="patient_list"&&isCaregiver) return (
@@ -2404,9 +2439,7 @@ function InteliBond({ session, profile }) {
               <GaitCard label="Gait speed"   value={gaitData.speed}          unit="m/s"  lo={0.6} hi={1.3}  icon="🚶"/>
               <GaitCard label="Cadence"       value={gaitData.cadence}        unit="spm"  lo={75}  hi={115}  history={gaitData.cadence_history} icon="⏱"/>
               <GaitCard label="Stride length" value={gaitData.stride_length}  unit="m"    lo={0.7} hi={1.3}  icon="↔"/>
-              <GaitCard label="Step width"    value={gaitData.step_width}     unit="m"    lo={0.1} hi={0.25} icon="↕"/>
               <GaitCard label="Symmetry"      value={gaitData.symmetry_index} unit="%"    lo={70}  hi={100}  icon="⚖"/>
-              <GaitCard label="Variability"   value={gaitData.variability}    unit="%CV"  lo={0}   hi={10}   icon="〰"/>
             </div>
           </div>
         )}
@@ -2877,9 +2910,7 @@ function InteliBond({ session, profile }) {
               <GaitCard label="Gait speed"   value={gaitData.speed}          unit="m/s"  lo={0.6} hi={1.3}  icon="🚶"/>
               <GaitCard label="Cadence"       value={gaitData.cadence}        unit="spm"  lo={75}  hi={115}  history={gaitData.cadence_history} icon="⏱"/>
               <GaitCard label="Stride length" value={gaitData.stride_length}  unit="m"    lo={0.7} hi={1.3}  icon="↔"/>
-              <GaitCard label="Step width"    value={gaitData.step_width}     unit="m"    lo={0.1} hi={0.25} icon="↕"/>
               <GaitCard label="Symmetry"      value={gaitData.symmetry_index} unit="%"    lo={70}  hi={100}  icon="⚖"/>
-              <GaitCard label="Variability"   value={gaitData.variability}    unit="%CV"  lo={0}   hi={10}   icon="〰"/>
             </div>
           ):(
             <div style={{textAlign:"center",padding:"20px 0"}}>
@@ -2938,87 +2969,180 @@ function InteliBond({ session, profile }) {
           )}
         </div>
 
-        {frailty&&mcsComplete&&(
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,padding:"16px 20px",marginBottom:14}}>
-            <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:T.text3,marginBottom:12}}>CLINICAL SUMMARY</div>
-            <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:12}}>
-              <div style={{textAlign:"center",flex:1}}>
-                <div style={{fontSize:16,fontWeight:800,color:fm.ring}}>{frailty.level}</div>
-                <div style={{fontSize:9,color:T.text3,marginTop:2}}>Frailty class</div>
-              </div>
-              <div style={{width:1,height:40,background:T.border}}/>
-              <div style={{textAlign:"center",flex:1}}>
-                <div style={{fontSize:16,fontWeight:800,color:mcsC}}>{mcsTotal}<span style={{fontSize:11,color:T.text3}}>/20</span></div>
-                <div style={{fontSize:9,color:T.text3,marginTop:2}}>MCS</div>
-              </div>
-            </div>
-            <div style={{background:T.surface2,borderRadius:10,padding:"10px 14px",fontSize:12,
-              color:T.text2,lineHeight:1.6,borderLeft:`3px solid ${mcsC}`,marginBottom:14}}>
-              {mcsTotal>=14?"Good mobility. Continue monitoring and preventive exercise."
-               :mcsTotal>=8?"Moderate impairment. Consider physiotherapy referral and exercise programme."
-               :"Significant impairment. Urgent geriatric review and multidisciplinary care recommended."}
-            </div>
-            {/* Save & Export row — caregivers only */}
-            {isCaregiver&&<div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setShowSaveModal(true)}
-                style={{flex:2,padding:"12px",borderRadius:11,border:"none",
-                  background:selectedPatient?T.primary:"#8BA3BE",color:"#fff",
-                  fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 10V12H12V10M7 2V9M4 6L7 9L10 6" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                {selectedPatient?"Save to Record":"Select Patient to Save"}
-              </button>
-              <button onClick={()=>generatePDF({
-                  patient: selectedPatient||{full_name:"Unknown Patient"},
-                  assessment:{
-                    assessed_at:         new Date().toISOString(),
-                    frailty_level:       frailty?.level,
-                    frailty_confidence:  frailty?.confidence,
-                    gait_speed:          gaitData?.speed,
-                    cadence:             gaitData?.cadence,
-                    stride_length:       gaitData?.stride_length,
-                    step_width:          gaitData?.step_width,
-                    symmetry_index:      gaitData?.symmetry_index,
-                    variability:         gaitData?.variability,
-                    mcs_total:           mcsTotal,
-                    mcs_lying_to_sitting:    taskScores["lying_to_sitting"]??null,
-                    mcs_sitting_to_lying:    taskScores["sitting_to_lying"]??null,
-                    mcs_sitting_to_standing: taskScores["sitting_to_standing"]??null,
-                    mcs_standing:            taskScores["standing"]??null,
-                    mcs_gait:                taskScores["gait"]??null,
-                    mcs_timed_walk:          taskScores["timed_walk"]??null,
-                    mcs_functional_reach:    taskScores["functional_reach"]??null,
-                  },
-                  caregiverName:profile?.full_name||session?.user?.email
-                })}
-                style={{flex:1,padding:"12px",borderRadius:11,border:`1px solid ${T.border2}`,
-                  background:T.surface,color:T.primary,fontSize:12,fontWeight:700,cursor:"pointer",
-                  display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 2H9L12 5V12H2V2Z" stroke={T.primary} strokeWidth="1.2" strokeLinejoin="round"/>
-                  <path d="M9 2V5H12" stroke={T.primary} strokeWidth="1.2" strokeLinejoin="round"/>
-                  <path d="M5 8H9M5 10H7" stroke={T.primary} strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
-                PDF
-              </button>
-            </div>}
-          </div>
-        )}
+        {/* ── Progress stepper ─────────────────────────── */}
+        {(()=>{
+          const gaitDone = !!frailty;
+          const mcsDone  = mcsComplete;
+          const mcsPartial = Object.keys(taskScores).length > 0 && !mcsComplete;
+          const hasAnything = gaitDone || Object.keys(taskScores).length > 0;
 
-        {/* View history shortcut — caregivers only */}
-        {isCaregiver&&selectedPatient&&(
-          <button onClick={()=>{setHistoryPatient(selectedPatient);setView("history");}}
-            style={{width:"100%",padding:"11px",borderRadius:11,border:`1px solid ${T.border}`,
-              background:T.surface,color:T.text2,fontSize:12,fontWeight:600,cursor:"pointer",
-              display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:8}}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <circle cx="7" cy="7" r="5.5" stroke={T.text3} strokeWidth="1.2"/>
-              <path d="M7 4V7L9 9" stroke={T.text3} strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
-            View {selectedPatient.full_name}'s History
-          </button>
-        )}
+          // Build the PDF assessment object (works for partial saves too)
+          const buildAssessment = (note) => ({
+            assessed_at:             new Date().toISOString(),
+            frailty_level:           frailty?.level ?? null,
+            frailty_confidence:      frailty?.confidence ?? null,
+            gait_speed:              gaitData?.speed ?? null,
+            gait_cadence:            gaitData?.cadence ?? null,
+            gait_stride_length:      gaitData?.stride_length ?? null,
+            gait_symmetry:           gaitData?.symmetry_index ?? null,
+            mcs_total:               mcsTotal,
+            mcs_lying_to_sitting:    taskScores["lying_to_sitting"]    ?? null,
+            mcs_sitting_to_lying:    taskScores["sitting_to_lying"]    ?? null,
+            mcs_sitting_to_standing: taskScores["sitting_to_standing"] ?? null,
+            mcs_standing:            taskScores["standing"]             ?? null,
+            mcs_gait:                taskScores["gait"]                 ?? null,
+            mcs_timed_walk:          taskScores["timed_walk"]           ?? null,
+            mcs_functional_reach:    taskScores["functional_reach"]     ?? null,
+            notes:                   note || null,
+          });
+
+          const patientForPDF = isCaregiver
+            ? (selectedPatient || {full_name:"Unknown Patient"})
+            : {full_name: effectiveProfile?.full_name||"Patient",
+               date_of_birth: effectiveProfile?.date_of_birth,
+               gender: effectiveProfile?.gender};
+
+          return (
+            <>
+              {/* Progress stepper */}
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:16,
+                padding:"14px 16px",marginBottom:14}}>
+                <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:T.text3,marginBottom:10}}>ASSESSMENT PROGRESS</div>
+                <div style={{display:"flex",gap:8}}>
+                  {/* Step 1 */}
+                  <div style={{flex:1,background:gaitDone?T.successBg:T.surface2,
+                    border:`1.5px solid ${gaitDone?T.successBd:T.border}`,
+                    borderRadius:12,padding:"10px 12px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                      <div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,
+                        background:gaitDone?T.success:T.border,
+                        display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          {gaitDone
+                            ? <path d="M2 5l2 2 4-4" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            : <circle cx="5" cy="5" r="2" fill="#fff"/>}
+                        </svg>
+                      </div>
+                      <span style={{fontSize:10,fontWeight:700,color:gaitDone?T.success:T.text3}}>Step 1</span>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:600,color:gaitDone?T.success:T.text2}}>Gait Analysis</div>
+                    <div style={{fontSize:10,color:T.text3,marginTop:2}}>
+                      {gaitDone?frailty.level:"Not done yet"}
+                    </div>
+                  </div>
+                  {/* Arrow */}
+                  <div style={{display:"flex",alignItems:"center",color:T.text3,fontSize:14,flexShrink:0}}>→</div>
+                  {/* Step 2 */}
+                  <div style={{flex:1,background:mcsDone?T.successBg:mcsPartial?T.warnBg:T.surface2,
+                    border:`1.5px solid ${mcsDone?T.successBd:mcsPartial?T.warnBd:T.border}`,
+                    borderRadius:12,padding:"10px 12px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                      <div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,
+                        background:mcsDone?T.success:mcsPartial?T.warning:T.border,
+                        display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          {mcsDone
+                            ? <path d="M2 5l2 2 4-4" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            : <circle cx="5" cy="5" r="2" fill="#fff"/>}
+                        </svg>
+                      </div>
+                      <span style={{fontSize:10,fontWeight:700,color:mcsDone?T.success:mcsPartial?T.warning:T.text3}}>Step 2</span>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:600,color:mcsDone?T.success:mcsPartial?T.warning:T.text2}}>MCS Assessment</div>
+                    <div style={{fontSize:10,color:T.text3,marginTop:2}}>
+                      {mcsDone?`${mcsTotal}/20 pts`:mcsPartial?`${Object.keys(taskScores).length}/7 tasks`:"Not started"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clinical summary — shown whenever there's any data */}
+              {hasAnything&&(
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,
+                  padding:"16px 20px",marginBottom:14}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:T.text3,marginBottom:12}}>CLINICAL SUMMARY</div>
+
+                  <div style={{display:"flex",gap:10,marginBottom:12}}>
+                    {gaitDone&&(
+                      <div style={{flex:1,background:fm.bg,border:`1.5px solid ${fm.bd}`,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+                        <div style={{fontSize:10,color:T.text3,marginBottom:4}}>Frailty</div>
+                        <div style={{fontSize:15,fontWeight:800,color:fm.ring,lineHeight:1}}>{frailty.level}</div>
+                        <div style={{fontSize:9,color:T.text3,marginTop:3}}>{Math.round((frailty.confidence??0.78)*100)}% confidence</div>
+                      </div>
+                    )}
+                    {Object.keys(taskScores).length>0&&(
+                      <div style={{flex:1,background:T.surface2,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+                        <div style={{fontSize:10,color:T.text3,marginBottom:4}}>MCS Score</div>
+                        <div style={{fontSize:15,fontWeight:800,color:mcsC,lineHeight:1}}>{mcsTotal}<span style={{fontSize:10,color:T.text3}}>/20</span></div>
+                        <div style={{fontSize:9,color:T.text3,marginTop:3}}>{Object.keys(taskScores).length}/7 tasks</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {(gaitDone||mcsDone)&&(
+                    <div style={{background:T.surface2,borderRadius:10,padding:"10px 14px",fontSize:12,
+                      color:T.text2,lineHeight:1.6,borderLeft:`3px solid ${mcsC}`,marginBottom:14}}>
+                      {mcsTotal>=14?"Good mobility. Continue monitoring and preventive exercise."
+                       :mcsTotal>=8?"Moderate impairment. Consider physiotherapy referral and exercise programme."
+                       :"Significant impairment. Urgent geriatric review and multidisciplinary care recommended."}
+                    </div>
+                  )}
+
+                  {/* Save & PDF row — available to ALL roles */}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>setShowSaveModal(true)}
+                      style={{flex:2,padding:"13px",borderRadius:11,border:"none",
+                        background:(!isCaregiver||selectedPatient)?T.primary:"#8BA3BE",color:"#fff",
+                        fontSize:13,fontWeight:700,cursor:"pointer",
+                        display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+                      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                        <path d="M2 11V13H13V11M7.5 2V10M4.5 7L7.5 10L10.5 7" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      {isCaregiver
+                        ? (selectedPatient?"Save to Record":"Select Patient First")
+                        : "Save My Assessment"}
+                    </button>
+                    <button onClick={()=>generatePDF({
+                        patient: patientForPDF,
+                        assessment: buildAssessment(null),
+                        caregiverName: effectiveProfile?.full_name||session?.user?.email
+                      })}
+                      style={{flex:1,padding:"13px",borderRadius:11,border:`1.5px solid ${T.border2}`,
+                        background:T.surface,color:T.primary,fontSize:12,fontWeight:700,cursor:"pointer",
+                        display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                        <path d="M2 2H9.5L13 5.5V13H2V2Z" stroke={T.primary} strokeWidth="1.3" strokeLinejoin="round"/>
+                        <path d="M9.5 2V5.5H13" stroke={T.primary} strokeWidth="1.3" strokeLinejoin="round"/>
+                        <path d="M5 8.5H10M5 10.5H7.5" stroke={T.primary} strokeWidth="1.3" strokeLinecap="round"/>
+                      </svg>
+                      PDF
+                    </button>
+                  </div>
+
+                  {isCaregiver&&!selectedPatient&&(
+                    <div style={{marginTop:8,fontSize:11,color:T.warning,textAlign:"center"}}>
+                      Select a patient above to enable saving to their record.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* View history shortcut — caregivers with patient selected */}
+              {isCaregiver&&selectedPatient&&(
+                <button onClick={()=>{setHistoryPatient(selectedPatient);setView("history");}}
+                  style={{width:"100%",padding:"11px",borderRadius:11,border:`1px solid ${T.border}`,
+                    background:T.surface,color:T.text2,fontSize:12,fontWeight:600,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:8}}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <circle cx="7" cy="7" r="5.5" stroke={T.text3} strokeWidth="1.2"/>
+                    <path d="M7 4V7L9 9" stroke={T.text3} strokeWidth="1.2" strokeLinecap="round"/>
+                  </svg>
+                  View {selectedPatient.full_name}'s History
+                </button>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       <canvas ref={capCanvas} style={{display:"none"}}/>
@@ -3030,13 +3154,14 @@ function InteliBond({ session, profile }) {
           onClose={()=>setShowAddPatient(false)}
         />
       )}
-      {isCaregiver&&showSaveModal&&(
+      {showSaveModal&&(
         <SaveAssessmentModal
-          patient={selectedPatient}
+          patient={isCaregiver ? selectedPatient : (effectiveProfile||{full_name:session?.user?.email})}
           frailty={frailty}
           gaitData={gaitData}
           mcsTotal={mcsTotal}
           taskScores={taskScores}
+          isCaregiver={isCaregiver}
           onSave={handleSaveAssessment}
           onClose={()=>setShowSaveModal(false)}
         />
