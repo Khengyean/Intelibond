@@ -1150,9 +1150,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
   const poseRef    = useRef(null);
   const rafRef     = useRef(null);
   const readyR     = useRef(false);
-  const mirroredRef = useRef(mirrored); // keep ref fresh without re-init
-
-  // Update mirroredRef whenever prop changes — no need to restart pose
+  const mirroredRef = useRef(mirrored);
   useEffect(() => { mirroredRef.current = mirrored; }, [mirrored]);
 
   useEffect(() => {
@@ -1164,61 +1162,77 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     }
     if (!window.Pose) { console.warn("[PoseCanvas] window.Pose not available"); return; }
 
-    console.log("[PoseCanvas] Initializing MediaPipe Pose...");
     const pose = new window.Pose({
       locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
     });
-    pose.setOptions({ modelComplexity:1, smoothLandmarks:true,
-      enableSegmentation:false, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
 
     pose.onResults(results => {
-      const cv = cvRef.current; if (!cv) return;
-      const vid = videoRef.current;
-      const W = vid?.videoWidth  || 640;
-      const H = vid?.videoHeight || 480;
-      // Only resize canvas if dimensions actually changed — avoids flicker
-      if (cv.width !== W) cv.width = W;
-      if (cv.height !== H) cv.height = H;
+      const cv  = cvRef.current;  if (!cv) return;
+      const vid = videoRef.current; if (!vid) return;
+
+      // ── Match canvas resolution to actual video feed ──────────
+      const vW = vid.videoWidth  || 640;
+      const vH = vid.videoHeight || 480;
+      if (cv.width !== vW)  cv.width  = vW;
+      if (cv.height !== vH) cv.height = vH;
 
       const ctx = cv.getContext("2d");
-      ctx.clearRect(0, 0, W, H);
-      if (!results.poseLandmarks) return;
+      ctx.save();
+      ctx.clearRect(0, 0, vW, vH);
+
+      if (!results.poseLandmarks) { ctx.restore(); return; }
 
       const lms = results.poseLandmarks;
 
-      // When front camera is used, video is CSS-mirrored (scaleX -1).
-      // Canvas is NOT CSS-mirrored. So we must mirror landmark X coords
-      // manually so they align with what the user sees on screen.
-      const drawLms = mirroredRef.current
-        ? lms.map(lm => ({ ...lm, x: 1 - lm.x }))
-        : lms;
+      if (mirroredRef.current) {
+        // Mirror drawing context instead of flipping landmark coords.
+        // This correctly aligns with the CSS-mirrored video element.
+        ctx.translate(vW, 0);
+        ctx.scale(-1, 1);
+      }
 
       if (window.drawConnectors && window.POSE_CONNECTIONS)
-        window.drawConnectors(ctx, drawLms, window.POSE_CONNECTIONS,
-          { color:"rgba(0,229,255,0.9)", lineWidth:2.5 });
+        window.drawConnectors(ctx, lms, window.POSE_CONNECTIONS,
+          { color: "rgba(0,229,255,0.9)", lineWidth: 3 });
       if (window.drawLandmarks)
-        window.drawLandmarks(ctx, drawLms,
-          { color:"#FFD600", fillColor:"#FF6D00", lineWidth:1, radius:5 });
+        window.drawLandmarks(ctx, lms,
+          { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 1.5, radius: 6 });
 
-      // Pass ORIGINAL (unflipped) landmarks to state machines for correct math
-      if (onLandmarks) onLandmarks(lms, results.poseWorldLandmarks||null);
+      ctx.restore();
+
+      // Always pass original unmirrored landmarks to state machines
+      if (onLandmarks) onLandmarks(lms, results.poseWorldLandmarks || null);
     });
 
-    pose.initialize().then(() => {
-      console.log("[PoseCanvas] MediaPipe Pose ready!");
-      readyR.current=true; poseRef.current=pose;
-    }).catch(err => console.error("[PoseCanvas] Init error:", err));
+    pose.initialize()
+      .then(() => { readyR.current = true; poseRef.current = pose; })
+      .catch(err => console.error("[PoseCanvas] Init error:", err));
 
-    let stopped=false;
+    let stopped = false;
     async function loop() {
       if (stopped) return;
-      const vid=videoRef.current, p=poseRef.current;
-      if (vid && vid.readyState>=2 && readyR.current && p)
-        try { await p.send({image:vid}); } catch(e){ console.warn("[PoseCanvas] send error:", e); }
+      const vid = videoRef.current, p = poseRef.current;
+      if (vid && vid.readyState >= 2 && readyR.current && p) {
+        try { await p.send({ image: vid }); }
+        catch(e) { console.warn("[PoseCanvas] send error:", e); }
+      }
       rafRef.current = requestAnimationFrame(loop);
     }
     loop();
-    return () => { stopped=true; cancelAnimationFrame(rafRef.current); readyR.current=false; try{pose.close();}catch(_){} };
+
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(rafRef.current);
+      readyR.current = false;
+      try { pose.close(); } catch(_) {}
+    };
   }, [active]);
 
   return <canvas ref={cvRef} className="pose-canvas"/>;
@@ -2382,7 +2396,7 @@ function InteliBond({ session, profile }) {
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
           <video ref={gaitVideoRef}
             className={gaitFacing==="user"?"vid-mirrored":""}
-            style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
+            style={{width:"100%",height:"100%",objectFit:"contain",display:"block",background:"#000"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}
             mirrored={gaitFacing==="user"}/>
           {/* Flip camera button */}
@@ -2494,7 +2508,7 @@ function InteliBond({ session, profile }) {
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
           <video ref={assVideoRef}
             className={assFacing==="user"?"vid-mirrored":""}
-            style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
+            style={{width:"100%",height:"100%",objectFit:"contain",display:"block",background:"#000"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}
             mirrored={assFacing==="user"}/>
           {/* Flip camera button */}
