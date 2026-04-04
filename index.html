@@ -1970,6 +1970,16 @@ function InteliBond({ session, profile }) {
 
   // Define early so all tab screens can use it
   const isCaregiver = profile?.role !== "elderly";
+
+  // For elderly users, build a patient-shaped object from their own profile data
+  // so it can be passed wherever a "patient" record is needed (PDF, save modal, etc.)
+  const effectiveProfile = !isCaregiver ? {
+    full_name:     profileData.full_name || profile?.full_name || session?.user?.email || "Patient",
+    date_of_birth: profileData.date_of_birth || null,
+    gender:        profileData.gender || null,
+    ic_number:     profileData.ic_number || null,
+    id:            session?.user?.id,
+  } : null;
   const [gaitRecording, setGaitR] = useState(false);
   const [gaitElapsed, setGaitE]   = useState(0);
   const [gaitData, setGaitData]   = useState(null);
