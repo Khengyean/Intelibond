@@ -1825,6 +1825,86 @@ function ExercisePanel({ task, exIdx, exState, onStart, onReset, onAccept, onSto
 /* ═══════════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   PROFILE EDIT FORM — defined outside InteliBond to prevent re-mount on re-render
+═══════════════════════════════════════════════════════════ */
+function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSaved, onSave, session }) {
+  return (
+    <div style={{background:"#FFFFFF",border:"1px solid #D0E0EF",borderRadius:18,padding:"20px",marginBottom:12}}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"#8BA3BE",marginBottom:16}}>PERSONAL INFO</div>
+
+      {/* Email read-only */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>
+          Email <span style={{fontSize:10,color:"#8BA3BE",fontWeight:400}}>(cannot be changed)</span>
+        </div>
+        <div style={{padding:"13px 16px",borderRadius:12,background:"#F4F8FD",
+          border:"1.5px solid #D0E0EF",fontSize:14,color:"#8BA3BE"}}>
+          {session?.user?.email}
+        </div>
+      </div>
+
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Full Name</div>
+        <input className="auth-input" type="text" placeholder="Your full name"
+          value={profileData.full_name}
+          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,full_name:v}));}}/>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Phone</div>
+        <input className="auth-input" type="tel" placeholder="+60 12-345 6789"
+          value={profileData.phone}
+          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,phone:v}));}}/>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Age</div>
+        <input className="auth-input" type="number" placeholder="e.g. 72"
+          value={profileData.age}
+          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,age:v}));}}/>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Date of Birth</div>
+        <input className="auth-input" type="date"
+          value={profileData.date_of_birth}
+          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,date_of_birth:v}));}}/>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:8}}>Gender</div>
+        <div style={{display:"flex",gap:10}}>
+          {["male","female"].map(g=>(
+            <button key={g} className={"role-btn"+(profileData.gender===g?" active":"")}
+              onClick={()=>setProfileData(p=>({...p,gender:g}))}>
+              {g==="male"?"Male":"Female"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"#8BA3BE",margin:"20px 0 14px"}}>MEDICAL INFO</div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Medical Conditions</div>
+        <textarea className="auth-input" rows={3}
+          placeholder="e.g. Hypertension, Type 2 Diabetes, Osteoporosis"
+          value={profileData.medical_conditions}
+          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medical_conditions:v}));}}
+          style={{resize:"none",fontFamily:"inherit"}}/>
+      </div>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Current Medications</div>
+        <textarea className="auth-input" rows={3}
+          placeholder="e.g. Metformin 500mg, Amlodipine 5mg"
+          value={profileData.medications}
+          onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medications:v}));}}
+          style={{resize:"none",fontFamily:"inherit"}}/>
+      </div>
+
+      <button className="auth-btn" disabled={profileSaving} onClick={onSave}>
+        {profileSaving?"Saving…":profileSaved?"Saved!":"Save Changes"}
+      </button>
+    </div>
+  );
+}
+
 function InteliBond({ session, profile }) {
   const [view, setView]           = useState("home");
   const [tab, setTab]             = useState("assessment");
@@ -1834,6 +1914,7 @@ function InteliBond({ session, profile }) {
   });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved,  setProfileSaved]  = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
   const [myHistory, setMyHistory]         = useState([]);
   const [myHistLoading, setMyHistLoading] = useState(false);
 
@@ -2453,65 +2534,101 @@ function InteliBond({ session, profile }) {
      PROFILE TAB
   ───────────────────────────────────────────────────── */
   if (tab==="profile" && view==="home") {
-    const Field = ({label,value,onChange,type="text",placeholder=""})=>(
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:12,fontWeight:600,color:T.text2,marginBottom:6}}>{label}</div>
-        <input className="auth-input" type={type} placeholder={placeholder}
-          value={value} onChange={e=>onChange(e.target.value)}/>
+    const role = profile?.role||"user";
+    const displayName = profileData.full_name || profile?.full_name || "—";
+
+    /* ── Display row helper ── */
+    const InfoRow = ({label, value}) => (
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+        padding:"12px 0",borderBottom:`1px solid ${T.border}`}}>
+        <span style={{fontSize:13,color:T.text3,fontWeight:500,minWidth:120}}>{label}</span>
+        <span style={{fontSize:13,color:value?T.text:T.text3,fontWeight:value?600:400,
+          textAlign:"right",flex:1,marginLeft:12}}>{value||"Not set"}</span>
       </div>
     );
+
     return (
       <div style={{background:T.bg,minHeight:"100vh",color:T.text,maxWidth:430,margin:"0 auto",paddingBottom:80}}>
+
+        {/* Header */}
         <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"20px 22px 16px",
           boxShadow:"0 2px 12px rgba(26,111,191,0.08)"}}>
-          <div style={{fontSize:20,fontWeight:800,letterSpacing:-0.5,color:T.primary}}>Profile</div>
-          <div style={{fontSize:12,color:T.text3,marginTop:2,textTransform:"capitalize"}}>
-            {profile?.role||"User"} · {session?.user?.email}
-          </div>
-        </div>
-        <div style={{padding:"16px"}}>
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,padding:"20px",marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:1,color:T.text3,marginBottom:16}}>PERSONAL INFO</div>
-            <Field label="Full Name" value={profileData.full_name}
-              onChange={v=>setProfileData(p=>({...p,full_name:v}))} placeholder="Your full name"/>
-            <Field label="Phone" value={profileData.phone} type="tel"
-              onChange={v=>setProfileData(p=>({...p,phone:v}))} placeholder="+60 12-345 6789"/>
-            <Field label="Age" value={profileData.age} type="number"
-              onChange={v=>setProfileData(p=>({...p,age:v}))} placeholder="e.g. 72"/>
-            <Field label="Date of Birth" value={profileData.date_of_birth} type="date"
-              onChange={v=>setProfileData(p=>({...p,date_of_birth:v}))}/>
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:12,fontWeight:600,color:T.text2,marginBottom:8}}>Gender</div>
-              <div style={{display:"flex",gap:10}}>
-                {["male","female"].map(g=>(
-                  <button key={g} className={`role-btn${profileData.gender===g?" active":""}`}
-                    onClick={()=>setProfileData(p=>({...p,gender:g}))}>
-                    {g==="male"?"Male":"Female"}
-                  </button>
-                ))}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:20,fontWeight:800,letterSpacing:-0.5,color:T.primary}}>Profile</div>
+              <div style={{fontSize:12,color:T.text3,marginTop:2}}>
+                <span style={{textTransform:"capitalize"}}>{role.charAt(0).toUpperCase()+role.slice(1)}</span>
+                {" · "}{displayName}
               </div>
             </div>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:1,color:T.text3,margin:"20px 0 14px"}}>MEDICAL INFO</div>
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:12,fontWeight:600,color:T.text2,marginBottom:6}}>Medical Conditions</div>
-              <textarea className="auth-input" rows={3}
-                placeholder="e.g. Hypertension, Type 2 Diabetes, Osteoporosis"
-                value={profileData.medical_conditions}
-                onChange={e=>setProfileData(p=>({...p,medical_conditions:e.target.value}))}
-                style={{resize:"none",fontFamily:"inherit"}}/>
-            </div>
-            <div style={{marginBottom:20}}>
-              <div style={{fontSize:12,fontWeight:600,color:T.text2,marginBottom:6}}>Current Medications</div>
-              <textarea className="auth-input" rows={3}
-                placeholder="e.g. Metformin 500mg, Amlodipine 5mg"
-                value={profileData.medications}
-                onChange={e=>setProfileData(p=>({...p,medications:e.target.value}))}
-                style={{resize:"none",fontFamily:"inherit"}}/>
-            </div>
-            <button className="auth-btn" onClick={saveProfileData} disabled={profileSaving}>
-              {profileSaving?"Saving…":profileSaved?"Saved!":"Save Profile"}
+            <button onClick={()=>setProfileEditing(e=>!e)}
+              style={{fontSize:12,fontWeight:700,color:profileEditing?T.text2:T.primary,
+                background:profileEditing?"transparent":T.blue1,
+                border:`1.5px solid ${profileEditing?T.border:T.blue2}`,
+                borderRadius:10,padding:"7px 16px",cursor:"pointer"}}>
+              {profileEditing?"Cancel":"Edit"}
             </button>
           </div>
+        </div>
+
+        <div style={{padding:"16px"}}>
+
+          {/* ── DISPLAY MODE ── */}
+          {!profileEditing && (
+            <>
+              {/* Avatar card */}
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,
+                padding:"24px 20px",marginBottom:12,textAlign:"center"}}>
+                <div style={{width:64,height:64,borderRadius:"50%",background:T.blue1,
+                  border:`2px solid ${T.blue2}`,display:"flex",alignItems:"center",
+                  justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>
+                  {role==="elderly"?"🧓":"🧑‍⚕️"}
+                </div>
+                <div style={{fontSize:18,fontWeight:800,color:T.text}}>{displayName}</div>
+                <div style={{fontSize:12,color:T.text3,marginTop:4,textTransform:"capitalize"}}>{role}</div>
+              </div>
+
+              {/* Personal info display */}
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,
+                padding:"4px 20px",marginBottom:12}}>
+                <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:T.text3,
+                  padding:"14px 0 8px"}}>PERSONAL INFO</div>
+                <InfoRow label="Phone"         value={profileData.phone}/>
+                <InfoRow label="Age"           value={profileData.age ? `${profileData.age} years old` : ""}/>
+                <InfoRow label="Date of Birth" value={profileData.date_of_birth}/>
+                <InfoRow label="Gender"        value={profileData.gender ? profileData.gender.charAt(0).toUpperCase()+profileData.gender.slice(1) : ""}/>
+              </div>
+
+              {/* Medical info display */}
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,
+                padding:"4px 20px",marginBottom:12}}>
+                <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:T.text3,
+                  padding:"14px 0 8px"}}>MEDICAL INFO</div>
+                <InfoRow label="Conditions"   value={profileData.medical_conditions}/>
+                <InfoRow label="Medications"  value={profileData.medications}/>
+              </div>
+
+              <button onClick={()=>setProfileEditing(true)}
+                style={{width:"100%",padding:"13px",borderRadius:13,border:`1.5px solid ${T.blue2}`,
+                  background:T.blue1,color:T.primary,fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+                Edit Profile
+              </button>
+            </>
+          )}
+
+          {/* ── EDIT MODE ── */}
+          {profileEditing && (
+            <ProfileEditForm
+              profileData={profileData}
+              setProfileData={setProfileData}
+              profileSaving={profileSaving}
+              profileSaved={profileSaved}
+              session={session}
+              onSave={async()=>{ await saveProfileData(); setProfileEditing(false); }}
+            />
+          )}
+
+          {/* Sign out — always visible */}
           <button onClick={()=>sb.auth.signOut()}
             style={{width:"100%",padding:"13px",borderRadius:13,border:`1.5px solid ${T.dangerBd}`,
               background:T.dangerBg,color:T.danger,fontSize:14,fontWeight:700,cursor:"pointer"}}>
