@@ -1836,6 +1836,9 @@ function InteliBond({ session, profile }) {
   const [profileSaved,  setProfileSaved]  = useState(false);
   const [myHistory, setMyHistory]         = useState([]);
   const [myHistLoading, setMyHistLoading] = useState(false);
+
+  // Define early so all tab screens can use it
+  const isCaregiver = profile?.role !== "elderly";
   const [gaitRecording, setGaitR] = useState(false);
   const [gaitElapsed, setGaitE]   = useState(0);
   const [gaitData, setGaitData]   = useState(null);
@@ -2062,9 +2065,9 @@ function InteliBond({ session, profile }) {
       });
   },[session]);
 
-  // Fetch own history when history tab opened (elderly view)
+  // Fetch history when history tab opened — works for both roles
   useEffect(()=>{
-    if (tab!=="history" || isCaregiver) return;
+    if (tab!=="history") return;
     setMyHistLoading(true);
     sb.from("assessments")
       .select("*").eq("assessed_by", session.user.id)
@@ -2380,7 +2383,7 @@ function InteliBond({ session, profile }) {
   const fmBd    = lvl => lvl==="Non-frail"?T.successBd:lvl==="Frail"?T.dangerBd:T.warnBd;
 
   if (tab==="history" && view==="home") {
-    const items = myHistory;
+    const items = myHistory || [];
     const loading = myHistLoading;
     return (
       <div style={{background:T.bg,minHeight:"100vh",color:T.text,maxWidth:430,margin:"0 auto",paddingBottom:80}}>
@@ -2520,7 +2523,6 @@ function InteliBond({ session, profile }) {
     );
   }
 
-    const isCaregiver = profile?.role !== "elderly";
 
   return (
     <div style={{background:T.bg,minHeight:"100vh",color:T.text,maxWidth:430,margin:"0 auto",paddingBottom:80}}>
