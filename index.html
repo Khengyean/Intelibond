@@ -18,8 +18,6 @@
     #root{min-height:100vh}
     .vid-wrap{position:relative}
     .pose-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;border-radius:inherit}
-    .vid-mirrored{transform:scaleX(-1)}
-    .canvas-mirrored{transform:scaleX(-1)}
     @keyframes fadeInScale{from{opacity:0;transform:scale(0.93)}to{opacity:1;transform:scale(1)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
     @keyframes spin{to{transform:rotate(360deg)}}
@@ -173,7 +171,9 @@ function generatePDF({ patient, assessment, caregiverName }) {
       { label:"Gait Speed",    val:`${assessment.gait_speed} m/s`,      lo:0.6, hi:1.3,  v:assessment.gait_speed },
       { label:"Cadence",       val:`${assessment.cadence} spm`,          lo:75,  hi:115,  v:assessment.cadence },
       { label:"Stride Length", val:`${assessment.stride_length} m`,      lo:0.7, hi:1.3,  v:assessment.stride_length },
+      { label:"Step Width",    val:`${assessment.step_width} m`,         lo:0.1, hi:0.25, v:assessment.step_width },
       { label:"Symmetry",      val:`${assessment.symmetry_index}%`,      lo:70,  hi:100,  v:assessment.symmetry_index },
+      { label:"Variability",   val:`${assessment.variability}%CV`,       lo:0,   hi:10,   v:assessment.variability },
     ];
     const gcw = (cw-10)/3;
     gParams.forEach((p,i) => {
@@ -615,9 +615,9 @@ function AssessmentHistoryScreen({ patient, assessments, loading, onBack, onDown
                           {l:"Speed",    v:a.gait_speed,    u:"m/s"},
                           {l:"Cadence",  v:a.cadence,       u:"spm"},
                           {l:"Stride",   v:a.stride_length, u:"m"},
-
+                          {l:"Step W.",  v:a.step_width,    u:"m"},
                           {l:"Symmetry", v:a.symmetry_index,u:"%"},
-
+                          {l:"Variab.",  v:a.variability,   u:"%CV"},
                         ].map(g=>(
                           <div key={g.l} style={{background:"#F4F8FD",borderRadius:8,padding:"7px 8px",textAlign:"center"}}>
                             <div style={{fontSize:8,color:"#8BA3BE",fontWeight:600,marginBottom:2}}>{g.l.toUpperCase()}</div>
@@ -1138,7 +1138,7 @@ function useHelperTracker() {
 /* ═══════════════════════════════════════════════════════════
    MEDIAPIPE POSE CANVAS
 ═══════════════════════════════════════════════════════════ */
-function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
+function PoseCanvas({ videoRef, active, onLandmarks }) {
   const cvRef   = useRef(null);
   const poseRef = useRef(null);
   const rafRef  = useRef(null);
@@ -1196,7 +1196,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     return () => { stopped=true; cancelAnimationFrame(rafRef.current); readyR.current=false; try{pose.close();}catch(_){} };
   }, [active]);
 
-  return <canvas ref={cvRef} className={`pose-canvas${mirrored?' canvas-mirrored':''}`}/>;
+  return <canvas ref={cvRef} className="pose-canvas"/>;
 }
 
 /* ─── Pose badge ─────────────────────────────────── */
@@ -1975,35 +1975,6 @@ function InteliBond({ session, profile }) {
   const [taskScores, setTaskScores] = useState({});
   const [helperCount, setHelperCount] = useState(0);
 
-  // Camera facing mode — shared for both cameras
-  const [gaitFacing, setGaitFacing]   = useState("user");       // "user"=front, "environment"=back
-  const [assFacing,  setAssFacing]    = useState("user");
-
-  // Helper: start a stream with given facingMode, stop old tracks first
-  const startStream = useCallback(async (facing, videoRef, streamRef) => {
-    streamRef.current?.getTracks().forEach(t=>t.stop());
-    const s = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode: facing, width:{ideal:1280}, height:{ideal:720} }, audio:false
-    });
-    streamRef.current = s;
-    if (videoRef.current){ videoRef.current.srcObject = s; videoRef.current.play().catch(()=>{}); }
-    return s;
-  }, []);
-
-  // ── Flip gait camera ──────────────────────────────
-  const flipGaitCamera = useCallback(async () => {
-    const next = gaitFacing === "user" ? "environment" : "user";
-    setGaitFacing(next);
-    try { await startStream(next, gaitVideoRef, gaitStream); } catch(e){ console.warn(e); }
-  }, [gaitFacing, startStream]);
-
-  // ── Flip assessment camera ────────────────────────
-  const flipAssCamera = useCallback(async () => {
-    const next = assFacing === "user" ? "environment" : "user";
-    setAssFacing(next);
-    try { await startStream(next, assVideoRef, assStream); } catch(e){ console.warn(e); }
-  }, [assFacing, startStream]);
-
   // Patient management & persistence
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showAddPatient, setShowAddPatient]   = useState(false);
@@ -2115,11 +2086,15 @@ function InteliBond({ session, profile }) {
 
   /* ── Camera helpers ─────────────────────────────── */
   const openGaitCamera = useCallback(async () => {
-    setGaitFacing("user");
     setView("gait_camera");
     await new Promise(r=>setTimeout(r,60));
-    try { await startStream("user", gaitVideoRef, gaitStream); } catch(e){ console.warn(e); }
-  },[startStream]);
+    try {
+      const s=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}},audio:false});
+      gaitStream.current=s;
+      if (gaitVideoRef.current){ gaitVideoRef.current.srcObject=s; gaitVideoRef.current.play(); }
+    } catch(e){console.warn(e);}
+  },[]);
 
   const closeGaitCamera = useCallback(()=>{
     gaitStream.current?.getTracks().forEach(t=>t.stop());
@@ -2129,19 +2104,18 @@ function InteliBond({ session, profile }) {
 
   useEffect(()=>{
     if (view!=="assessment_camera") return;
-    setAssFacing("user");
     let cancelled=false;
     const t=setTimeout(async()=>{
       if (cancelled) return;
       try {
         setCamError(null);
-        const s=await navigator.mediaDevices.getUserMedia({
-          video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:false
-        });
-        if (cancelled){s.getTracks().forEach(t=>t.stop());return;}
-        assStream.current=s;
+        if (!assStream.current||assStream.current.getTracks().every(t=>t.readyState==="ended")) {
+          const s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+          if (cancelled){s.getTracks().forEach(t=>t.stop());return;}
+          assStream.current=s;
+        }
         if (assVideoRef.current){
-          assVideoRef.current.srcObject=s;
+          assVideoRef.current.srcObject=assStream.current;
           await assVideoRef.current.play().catch(()=>{});
         }
       } catch(e){
@@ -2172,7 +2146,9 @@ function InteliBond({ session, profile }) {
             speed:parseFloat((0.88+(Math.random()-0.5)*0.08).toFixed(2)),
             cadence:parseFloat((101+(Math.random()-0.5)*6).toFixed(1)),
             stride_length:parseFloat((1.02+(Math.random()-0.5)*0.06).toFixed(2)),
+            step_width:parseFloat((0.17+(Math.random()-0.5)*0.02).toFixed(2)),
             symmetry_index:parseFloat((93+(Math.random()-0.5)*4).toFixed(1)),
+            variability:parseFloat((3.8+(Math.random()-0.5)*1.5).toFixed(1)),
             cadence_history:Array.from({length:12},(_,i)=>parseFloat((101+Math.sin(i/2)*3+(Math.random()-0.5)*2).toFixed(1))),
           });
         }
@@ -2284,7 +2260,9 @@ function InteliBond({ session, profile }) {
       gait_speed:          gaitData?.speed ?? null,
       cadence:             gaitData?.cadence ?? null,  // DB col is cadence
       stride_length:       gaitData?.stride_length ?? null,
+      step_width:          gaitData?.step_width ?? null,
       symmetry_index:      gaitData?.symmetry_index ?? null,
+      variability:         gaitData?.variability ?? null,
       // Individual MCS columns instead of jsonb
       mcs_lying_to_sitting:   scores["lying_to_sitting"]   ?? null,
       mcs_sitting_to_lying:   scores["sitting_to_lying"]   ?? null,
@@ -2339,23 +2317,8 @@ function InteliBond({ session, profile }) {
         </div>
         <div className="vid-wrap" style={{margin:"16px 16px 12px",borderRadius:18,overflow:"hidden",
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
-          <video ref={gaitVideoRef}
-            className={gaitFacing==="user"?"vid-mirrored":""}
-            style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
-          <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}
-            mirrored={gaitFacing==="user"}/>
-          {/* Flip camera button */}
-          <button onClick={flipGaitCamera}
-            style={{position:"absolute",top:10,right:10,zIndex:16,
-              background:"rgba(18,38,58,0.65)",border:"1px solid rgba(255,255,255,0.2)",
-              borderRadius:10,padding:"7px 9px",cursor:"pointer",backdropFilter:"blur(4px)",
-              display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M3 10a7 7 0 0 1 7-7M17 10a7 7 0 0 1-7 7" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
-              <path d="M10 3l-2 2 2 2M10 17l2-2-2-2" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="10" cy="10" r="1.5" fill="#fff"/>
-            </svg>
-          </button>
+          <video ref={gaitVideoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
+          <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}/>
           {gaitRecording&&(
             <div style={{position:"absolute",top:10,right:12,zIndex:16,background:"rgba(192,57,43,0.9)",
               borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:700,color:"#fff",
@@ -2398,7 +2361,9 @@ function InteliBond({ session, profile }) {
               <GaitCard label="Gait speed"   value={gaitData.speed}          unit="m/s"  lo={0.6} hi={1.3}  icon="🚶"/>
               <GaitCard label="Cadence"       value={gaitData.cadence}        unit="spm"  lo={75}  hi={115}  history={gaitData.cadence_history} icon="⏱"/>
               <GaitCard label="Stride length" value={gaitData.stride_length}  unit="m"    lo={0.7} hi={1.3}  icon="↔"/>
+              <GaitCard label="Step width"    value={gaitData.step_width}     unit="m"    lo={0.1} hi={0.25} icon="↕"/>
               <GaitCard label="Symmetry"      value={gaitData.symmetry_index} unit="%"    lo={70}  hi={100}  icon="⚖"/>
+              <GaitCard label="Variability"   value={gaitData.variability}    unit="%CV"  lo={0}   hi={10}   icon="〰"/>
             </div>
           </div>
         )}
@@ -2451,23 +2416,8 @@ function InteliBond({ session, profile }) {
 
         <div className="vid-wrap" style={{margin:"14px 16px 12px",borderRadius:18,overflow:"hidden",
           background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
-          <video ref={assVideoRef}
-            className={assFacing==="user"?"vid-mirrored":""}
-            style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
-          <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}
-            mirrored={assFacing==="user"}/>
-          {/* Flip camera button */}
-          <button onClick={flipAssCamera}
-            style={{position:"absolute",top:10,right:10,zIndex:16,
-              background:"rgba(18,38,58,0.65)",border:"1px solid rgba(255,255,255,0.2)",
-              borderRadius:10,padding:"7px 9px",cursor:"pointer",backdropFilter:"blur(4px)",
-              display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M3 10a7 7 0 0 1 7-7M17 10a7 7 0 0 1-7 7" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
-              <path d="M10 3l-2 2 2 2M10 17l2-2-2-2" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="10" cy="10" r="1.5" fill="#fff"/>
-            </svg>
-          </button>
+          <video ref={assVideoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} playsInline muted autoPlay/>
+          <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}/>
 
           {camError&&(
             <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.85)",zIndex:20,
@@ -2869,7 +2819,9 @@ function InteliBond({ session, profile }) {
               <GaitCard label="Gait speed"   value={gaitData.speed}          unit="m/s"  lo={0.6} hi={1.3}  icon="🚶"/>
               <GaitCard label="Cadence"       value={gaitData.cadence}        unit="spm"  lo={75}  hi={115}  history={gaitData.cadence_history} icon="⏱"/>
               <GaitCard label="Stride length" value={gaitData.stride_length}  unit="m"    lo={0.7} hi={1.3}  icon="↔"/>
+              <GaitCard label="Step width"    value={gaitData.step_width}     unit="m"    lo={0.1} hi={0.25} icon="↕"/>
               <GaitCard label="Symmetry"      value={gaitData.symmetry_index} unit="%"    lo={70}  hi={100}  icon="⚖"/>
+              <GaitCard label="Variability"   value={gaitData.variability}    unit="%CV"  lo={0}   hi={10}   icon="〰"/>
             </div>
           ):(
             <div style={{textAlign:"center",padding:"20px 0"}}>
@@ -2968,7 +2920,9 @@ function InteliBond({ session, profile }) {
                     gait_speed:          gaitData?.speed,
                     cadence:             gaitData?.cadence,
                     stride_length:       gaitData?.stride_length,
+                    step_width:          gaitData?.step_width,
                     symmetry_index:      gaitData?.symmetry_index,
+                    variability:         gaitData?.variability,
                     mcs_total:           mcsTotal,
                     mcs_lying_to_sitting:    taskScores["lying_to_sitting"]??null,
                     mcs_sitting_to_lying:    taskScores["sitting_to_lying"]??null,
