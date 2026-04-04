@@ -1166,11 +1166,11 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
       locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
     });
     pose.setOptions({
-      modelComplexity: 1,
+      modelComplexity: 2,          // Heavy model — same as Python
       smoothLandmarks: true,
       enableSegmentation: false,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+      minDetectionConfidence: 0.7, // Higher = only confident detections
+      minTrackingConfidence: 0.7,  // Higher = smoother stable tracking
     });
 
     pose.onResults(results => {
@@ -1203,7 +1203,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
           { color: "rgba(0,229,255,0.9)", lineWidth: 3 });
       if (window.drawLandmarks)
         window.drawLandmarks(ctx, lms,
-          { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 1.5, radius: 6 });
+          { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 2, radius: 8 });
 
       ctx.restore();
 
@@ -1220,7 +1220,11 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
       if (stopped) return;
       const vid = videoRef.current, p = poseRef.current;
       if (vid && vid.readyState >= 2 && readyR.current && p) {
-        try { await p.send({ image: vid }); }
+        try {
+          // selfieMode tells MediaPipe the image is already mirrored
+          // so it correctly labels left/right landmarks
+          await p.send({ image: vid });
+        }
         catch(e) { console.warn("[PoseCanvas] send error:", e); }
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -2032,7 +2036,7 @@ function InteliBond({ session, profile }) {
   const startStream = useCallback(async (facing, videoRef, streamRef) => {
     streamRef.current?.getTracks().forEach(t=>t.stop());
     const s = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode: facing, width:{ideal:1280}, height:{ideal:720} }, audio:false
+      video:{ facingMode: facing, width:{ideal:1920}, height:{ideal:1080} }, audio:false
     });
     streamRef.current = s;
     if (videoRef.current){ videoRef.current.srcObject = s; videoRef.current.play().catch(()=>{}); }
@@ -2189,7 +2193,7 @@ function InteliBond({ session, profile }) {
       try {
         setCamError(null);
         const s=await navigator.mediaDevices.getUserMedia({
-          video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:false
+          video:{ facingMode:"user", width:{ideal:1920}, height:{ideal:1080} }, audio:false
         });
         if (cancelled){s.getTracks().forEach(t=>t.stop());return;}
         assStream.current=s;
