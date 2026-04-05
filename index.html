@@ -2422,7 +2422,8 @@ function InteliBond({ session, profile }) {
           <div style={{width:48}}/>
         </div>
         <div className="vid-wrap" style={{margin:"16px 16px 12px",borderRadius:18,overflow:"hidden",
-          background:"#000",position:"relative",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
+          background:"#000",position:"relative",aspectRatio:"4/3",
+          boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
           {/* Mirror wrapper — CSS mirrors BOTH video and canvas together */}
           <div style={{position:"absolute",inset:0,
             transform:gaitFacing==="user"?"scaleX(-1)":"none"}}>
@@ -2539,7 +2540,8 @@ function InteliBond({ session, profile }) {
         </div>
 
         <div className="vid-wrap" style={{margin:"14px 16px 12px",borderRadius:18,overflow:"hidden",
-          background:"#000",position:"relative",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
+          background:"#000",position:"relative",aspectRatio:"4/3",
+          boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
           {/* Mirror wrapper — CSS mirrors BOTH video and canvas together */}
           <div style={{position:"absolute",inset:0,
             transform:assFacing==="user"?"scaleX(-1)":"none"}}>
