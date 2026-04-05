@@ -1186,44 +1186,23 @@ function PoseCanvas({ videoRef, active, onLandmarks }) {
       if (cv.width  !== cW) cv.width  = cW;
       if (cv.height !== cH) cv.height = cH;
 
-      // Calculate where video is actually displayed inside container
-      // objectFit:"contain" preserves aspect ratio with letterbox/pillarbox
-      const videoAspect     = vW / vH;
-      const containerAspect = cW / cH;
-      let drawW, drawH, offsetX, offsetY;
-      if (videoAspect > containerAspect) {
-        // Wider video → pillarbox (black bars top/bottom)
-        drawW   = cW;
-        drawH   = cW / videoAspect;
-        offsetX = 0;
-        offsetY = (cH - drawH) / 2;
-      } else {
-        // Taller video → letterbox (black bars left/right)
-        drawH   = cH;
-        drawW   = cH * videoAspect;
-        offsetX = (cW - drawW) / 2;
-        offsetY = 0;
-      }
-
+      // Container matches video ratio exactly (set via onLoadedMetadata).
+      // objectFit:fill fills container perfectly — no black bars, no distortion.
+      // Normalized landmark coords map directly to canvas — no offset needed.
       const ctx = cv.getContext("2d");
       ctx.clearRect(0, 0, cW, cH);
 
-      // Remap landmarks from normalized video coords → canvas coords
-      // accounting for the letterbox/pillarbox offset
       if (results.poseLandmarks) {
         const lms = results.poseLandmarks;
-        const remapped = lms.map(lm => ({
-          ...lm,
-          x: (offsetX + lm.x * drawW) / cW,
-          y: (offsetY + lm.y * drawH) / cH,
-        }));
+        // Landmarks are already normalized 0-1 — use directly
+        const remapped = lms.map(lm => ({ ...lm }));
 
         if (window.drawConnectors && window.POSE_CONNECTIONS)
           window.drawConnectors(ctx, remapped, window.POSE_CONNECTIONS,
-            { color: "rgba(0,229,255,0.9)", lineWidth: 3 });
+            { color: "rgba(0,229,255,0.85)", lineWidth: 1.5 });
         if (window.drawLandmarks)
           window.drawLandmarks(ctx, remapped,
-            { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 2, radius: 7 });
+            { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 1, radius: 3 });
       }
 
       // Pass original unmodified landmarks to state machines
@@ -2054,8 +2033,10 @@ function InteliBond({ session, profile }) {
   const [helperCount, setHelperCount] = useState(0);
 
   // Camera facing mode — shared for both cameras
-  const [gaitFacing, setGaitFacing]   = useState("user");       // "user"=front, "environment"=back
+  const [gaitFacing, setGaitFacing]   = useState("user");
   const [assFacing,  setAssFacing]    = useState("user");
+  const [gaitRatio,  setGaitRatio]    = useState(75);   // paddingTop % = H/W*100, default 4:3=75%
+  const [assRatio,   setAssRatio]     = useState(75);
 
   // Helper: start a stream with given facingMode, stop old tracks first
   const startStream = useCallback(async (facing, videoRef, streamRef) => {
@@ -2422,16 +2403,21 @@ function InteliBond({ session, profile }) {
           <div style={{width:48}}/>
         </div>
         <div className="vid-wrap" style={{margin:"16px 16px 12px",borderRadius:18,overflow:"hidden",
-          background:"#000",position:"relative",aspectRatio:"4/3",
+          background:"#000",position:"relative",
+          height:0, paddingTop:`${gaitRatio}%`,
           boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
           {/* Mirror wrapper — CSS mirrors BOTH video and canvas together */}
           <div style={{position:"absolute",inset:0,
             transform:gaitFacing==="user"?"scaleX(-1)":"none"}}>
             <video ref={gaitVideoRef} style={{
               width:"100%",height:"100%",
-              objectFit:"contain",display:"block",
+              objectFit:"fill",display:"block",
               borderRadius:"inherit",
-            }} playsInline muted autoPlay/>
+            }} playsInline muted autoPlay
+            onLoadedMetadata={e=>{
+              const {videoWidth:w,videoHeight:h}=e.target;
+              if(w&&h) setGaitRatio(Math.round(h/w*10000)/100);
+            }}/>
             <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}/>
           </div>
           {/* Controls outside mirror wrapper so they are NOT flipped */}
@@ -2540,16 +2526,21 @@ function InteliBond({ session, profile }) {
         </div>
 
         <div className="vid-wrap" style={{margin:"14px 16px 12px",borderRadius:18,overflow:"hidden",
-          background:"#000",position:"relative",aspectRatio:"4/3",
+          background:"#000",position:"relative",
+          height:0, paddingTop:`${assRatio}%`,
           boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
           {/* Mirror wrapper — CSS mirrors BOTH video and canvas together */}
           <div style={{position:"absolute",inset:0,
             transform:assFacing==="user"?"scaleX(-1)":"none"}}>
             <video ref={assVideoRef} style={{
               width:"100%",height:"100%",
-              objectFit:"contain",display:"block",
+              objectFit:"fill",display:"block",
               borderRadius:"inherit",
-            }} playsInline muted autoPlay/>
+            }} playsInline muted autoPlay
+            onLoadedMetadata={e=>{
+              const {videoWidth:w,videoHeight:h}=e.target;
+              if(w&&h) setAssRatio(Math.round(h/w*10000)/100);
+            }}/>
             <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}/>
           </div>
           {/* Controls outside mirror wrapper so they are NOT flipped */}
