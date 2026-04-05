@@ -1157,7 +1157,7 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     if (!active) {
       cancelAnimationFrame(rafRef.current);
       const cv = cvRef.current;
-      if (cv) { cv.getContext("2d").clearRect(0,0,cv.width,cv.height); }
+      if (cv) cv.getContext("2d").clearRect(0,0,cv.width,cv.height);
       return;
     }
     if (!window.Pose) { console.warn("[PoseCanvas] Pose not loaded"); return; }
@@ -1180,6 +1180,10 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
 
       const vW = vid.videoWidth  || 640;
       const vH = vid.videoHeight || 480;
+
+      // ── Canvas = exact video pixel dimensions ─────────────────
+      // Container auto-sizes to video ratio (no forced aspectRatio).
+      // Canvas = video size = no scaling needed = perfect alignment.
       if (cv.width  !== vW) cv.width  = vW;
       if (cv.height !== vH) cv.height = vH;
 
@@ -1187,28 +1191,34 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
       ctx.save();
       ctx.clearRect(0, 0, vW, vH);
 
-      // Draw video frame directly onto canvas first.
-      // Canvas = single source of truth. No CSS objectFit mismatch.
+      // ── Draw video frame — no crop, no distortion ──────────────
       if (mirroredRef.current) {
         ctx.translate(vW, 0);
         ctx.scale(-1, 1);
       }
       ctx.drawImage(vid, 0, 0, vW, vH);
 
-      // Draw landmarks exactly on top of the video frame
+      // ── Draw landmarks — coords already match canvas exactly ───
+      // No remapping needed: MediaPipe normalized coords × vW/vH = pixels
       if (results.poseLandmarks) {
         const lms = results.poseLandmarks;
+
+        // Only need to mirror X for front camera
+        const drawLms = mirroredRef.current
+          ? lms.map(lm => ({ ...lm, x: 1 - lm.x }))
+          : lms;
+
         if (window.drawConnectors && window.POSE_CONNECTIONS)
-          window.drawConnectors(ctx, lms, window.POSE_CONNECTIONS,
+          window.drawConnectors(ctx, drawLms, window.POSE_CONNECTIONS,
             { color: "rgba(0,229,255,0.9)", lineWidth: 3 });
         if (window.drawLandmarks)
-          window.drawLandmarks(ctx, lms,
+          window.drawLandmarks(ctx, drawLms,
             { color: "#FFD600", fillColor: "#FF6D00", lineWidth: 2, radius: 7 });
       }
 
       ctx.restore();
 
-      // Pass original unmirrored landmarks to exercise state machines
+      // Pass original unmirrored landmarks to state machines
       if (onLandmarks && results.poseLandmarks)
         onLandmarks(results.poseLandmarks, results.poseWorldLandmarks || null);
     });
@@ -1237,7 +1247,26 @@ function PoseCanvas({ videoRef, active, onLandmarks, mirrored }) {
     };
   }, [active]);
 
-  // Canvas renders BOTH the video and the landmarks — video element is hidden
+  // Auto-resize container to match natural video aspect ratio
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    const onMeta = () => {
+      const cv = cvRef.current;
+      if (!cv || !vid.videoWidth) return;
+      const container = cv.parentElement;
+      if (!container) return;
+      const ratio = vid.videoHeight / vid.videoWidth;
+      container.style.height = container.clientWidth * ratio + "px";
+    };
+    vid.addEventListener("loadedmetadata", onMeta);
+    vid.addEventListener("resize", onMeta);
+    return () => {
+      vid.removeEventListener("loadedmetadata", onMeta);
+      vid.removeEventListener("resize", onMeta);
+    };
+  }, [videoRef, active]);
+
   return <canvas ref={cvRef} style={{
     position:"absolute", top:0, left:0,
     width:"100%", height:"100%",
@@ -2400,9 +2429,9 @@ function InteliBond({ session, profile }) {
           <div style={{width:48}}/>
         </div>
         <div className="vid-wrap" style={{margin:"16px 16px 12px",borderRadius:18,overflow:"hidden",
-          background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
+          background:"#000",boxShadow:`0 4px 20px rgba(26,111,191,0.15)`}}>
           <video ref={gaitVideoRef}
-            style={{display:"none"}} playsInline muted autoPlay/>
+            style={{display:"none",position:"absolute"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={gaitVideoRef} active={view==="gait_camera"} onLandmarks={setGaitLMs}
             mirrored={gaitFacing==="user"}/>
           {/* Flip camera button */}
@@ -2511,9 +2540,9 @@ function InteliBond({ session, profile }) {
         </div>
 
         <div className="vid-wrap" style={{margin:"14px 16px 12px",borderRadius:18,overflow:"hidden",
-          background:"#000",aspectRatio:"4/3",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
+          background:"#000",boxShadow:`0 4px 20px rgba(26,111,191,0.12)`}}>
           <video ref={assVideoRef}
-            style={{display:"none"}} playsInline muted autoPlay/>
+            style={{display:"none",position:"absolute"}} playsInline muted autoPlay/>
           <PoseCanvas videoRef={assVideoRef} active={view==="assessment_camera"} onLandmarks={handleAssLMs}
             mirrored={assFacing==="user"}/>
           {/* Flip camera button */}
