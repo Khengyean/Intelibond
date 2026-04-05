@@ -50,8 +50,18 @@ const sb = window.supabase.createClient(SUPA_URL, SUPA_KEY);
    CREATE TABLE IF NOT EXISTS profiles (
      id uuid PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
      full_name text, role text, phone text,
+     age integer, gender text, date_of_birth date,
+     ic_number text, medical_conditions text, medications text,
+     relationship text,
+     emergency_contact_name text,
+     emergency_contact_phone text,
+     emergency_contact_relationship text,
      created_at timestamptz DEFAULT now()
    );
+   -- Run these if you already have the profiles table:
+   -- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS emergency_contact_name text;
+   -- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS emergency_contact_phone text;
+   -- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS emergency_contact_relationship text;
    CREATE TABLE IF NOT EXISTS patients (
      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
      caregiver_id uuid REFERENCES profiles(id) ON DELETE CASCADE,
@@ -848,16 +858,32 @@ function SignupScreen({ onSwitch }) {
   const [password, setPassword] = useState("");
   const [phone, setPhone]       = useState("");
   const [role, setRole]         = useState("caregiver");
+  const [ecName, setEcName]     = useState("");
+  const [ecPhone, setEcPhone]   = useState("");
+  const [ecRel, setEcRel]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
   const [success, setSuccess]   = useState(false);
 
   const handleSignup = async () => {
+    if (role==="elderly" && ecPhone && !/^[+\d\s()-]{7,20}$/.test(ecPhone)) {
+      setError("Please enter a valid emergency contact phone number."); return;
+    }
     setError(""); setLoading(true);
-    const { error: err } = await sb.auth.signUp({
+    const { data: authData, error: err } = await sb.auth.signUp({
       email, password,
       options: { data: { full_name: fullName, role, phone } }
     });
+    if (!err && role==="elderly" && authData?.user) {
+      // Save emergency contact into profiles immediately
+      await sb.from("profiles").upsert({
+        id: authData.user.id,
+        full_name: fullName, role, phone: phone||null,
+        emergency_contact_name: ecName||null,
+        emergency_contact_phone: ecPhone||null,
+        emergency_contact_relationship: ecRel||null,
+      }, { onConflict:"id" });
+    }
     setLoading(false);
     if (err) setError(err.message);
     else setSuccess(true);
@@ -932,6 +958,53 @@ function SignupScreen({ onSwitch }) {
             <input className="auth-input" type="tel" placeholder="+60 12-345 6789"
               value={phone} onChange={e=>setPhone(e.target.value)}/>
           </div>
+
+          {role==="elderly" && (
+            <div style={{marginBottom:18}}>
+              <div style={{background:"#FFF8E6",border:"1px solid #F5D58A",borderRadius:12,
+                padding:"12px 14px",marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#C97B00",marginBottom:4}}>Emergency Contact</div>
+                <div style={{fontSize:11,color:"#8BA3BE",lineHeight:1.5}}>
+                  If your assessment shows high-risk results, InteliBond will prepare a WhatsApp alert to this person.
+                </div>
+              </div>
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>
+                  Contact Name <span style={{color:"#8BA3BE",fontWeight:400}}>(optional)</span>
+                </div>
+                <input className="auth-input" type="text" placeholder="e.g. Ahmad (Son)"
+                  value={ecName} onChange={e=>setEcName(e.target.value)}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>
+                  Contact Phone <span style={{color:"#C0392B",fontWeight:400"}}>*</span>
+                </div>
+                <input className="auth-input" type="tel" placeholder="+60 12-345 6789"
+                  value={ecPhone} onChange={e=>setEcPhone(e.target.value)}/>
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>
+                  Relationship <span style={{color:"#8BA3BE",fontWeight:400}}>(optional)</span>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {["Son","Daughter","Spouse","Sibling","Caregiver","Friend"].map(r=>(
+                    <button key={r} type="button"
+                      onClick={()=>setEcRel(ecRel===r?"":r)}
+                      style={{padding:"7px 12px",borderRadius:20,fontSize:11,fontWeight:600,
+                        border:`1.5px solid ${ecRel===r?"#1A6FBF":"#D0E0EF"}`,
+                        background:ecRel===r?"#EBF3FF":"#F4F8FD",
+                        color:ecRel===r?"#1A6FBF":"#4A6280",cursor:"pointer",fontFamily:"inherit"}}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <input className="auth-input" type="text" placeholder="Or type relationship…"
+                  value={["Son","Daughter","Spouse","Sibling","Caregiver","Friend"].includes(ecRel)?"":ecRel}
+                  onChange={e=>setEcRel(e.target.value)}
+                  style={{marginTop:8}}/>
+              </div>
+            </div>
+          )}
 
           <div style={{marginBottom:24}}>
             <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Password</div>
@@ -1951,6 +2024,53 @@ function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSa
               onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,medications:v}));}}
               style={{resize:"none",fontFamily:"inherit"}}/>
           </div>
+
+          {/* ── Emergency Contact ─────────────────────── */}
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"#8BA3BE",margin:"20px 0 14px"}}>EMERGENCY CONTACT</div>
+          <div style={{background:"#FFF8E6",border:"1px solid #F5D58A",borderRadius:12,
+            padding:"10px 14px",marginBottom:14}}>
+            <div style={{fontSize:11,color:"#C97B00",lineHeight:1.5}}>
+              When a high-risk result is detected (Frail or MCS below 9), InteliBond will open WhatsApp with a pre-written alert message to this contact.
+            </div>
+          </div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>Contact Name</div>
+            <input className="auth-input" type="text" placeholder="e.g. Ahmad bin Abdullah"
+              value={profileData.emergency_contact_name}
+              onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,emergency_contact_name:v}));}}/>
+          </div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:6}}>
+              Contact Phone
+              <span style={{fontSize:10,color:"#C0392B",fontWeight:500}}> (WhatsApp number)</span>
+            </div>
+            <input className="auth-input" type="tel" placeholder="+60 12-345 6789"
+              value={profileData.emergency_contact_phone}
+              onChange={e=>{const v=e.target.value; setProfileData(p=>({...p,emergency_contact_phone:v}));}}/>
+            <div style={{fontSize:10,color:"#8BA3BE",marginTop:5}}>Include country code, e.g. +60 for Malaysia</div>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#4A6280",marginBottom:8}}>Relationship</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+              {["Son","Daughter","Spouse","Sibling","Caregiver","Friend"].map(r=>(
+                <button key={r} type="button"
+                  onClick={()=>setProfileData(p=>({...p,emergency_contact_relationship:
+                    p.emergency_contact_relationship===r?"":r}))}
+                  style={{padding:"7px 12px",borderRadius:20,fontSize:11,fontWeight:600,
+                    border:`1.5px solid ${profileData.emergency_contact_relationship===r?"#1A6FBF":"#D0E0EF"}`,
+                    background:profileData.emergency_contact_relationship===r?"#EBF3FF":"#F4F8FD",
+                    color:profileData.emergency_contact_relationship===r?"#1A6FBF":"#4A6280",
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  {r}
+                </button>
+              ))}
+            </div>
+            <input className="auth-input" type="text" placeholder="Or type relationship…"
+              value={["Son","Daughter","Spouse","Sibling","Caregiver","Friend"].includes(
+                profileData.emergency_contact_relationship)?"":profileData.emergency_contact_relationship}
+              onChange={e=>{const v=e.target.value;
+                setProfileData(p=>({...p,emergency_contact_relationship:v}));}}/>
+          </div>
         </>
       )}
 
@@ -1994,13 +2114,185 @@ function ProfileEditForm({ profileData, setProfileData, profileSaving, profileSa
   );
 }
 
+
+/* ═══════════════════════════════════════════════════════════
+   WHATSAPP EMERGENCY ALERT
+   Opens wa.me deep link with a pre-written message.
+   The user taps "Send" in WhatsApp — no API key needed.
+═══════════════════════════════════════════════════════════ */
+function buildWhatsAppAlert({ patientName, frailtyLevel, mcsTotal, assessedAt }) {
+  const date = new Date(assessedAt||Date.now()).toLocaleDateString("en-MY",
+    {day:"numeric",month:"long",year:"numeric"});
+  const time = new Date(assessedAt||Date.now()).toLocaleTimeString("en-MY",
+    {hour:"2-digit",minute:"2-digit"});
+
+  const risks = [];
+  if (frailtyLevel === "Frail") risks.push("Frail classification (high fall risk)");
+  if (mcsTotal != null && mcsTotal < 9) risks.push(`Low Mobility Score: ${mcsTotal}/20`);
+
+  const msg =
+`*InteliBond Health Alert* 🚨
+
+Hello, this is an automated message from the InteliBond mobility assessment app.
+
+*Patient:* ${patientName||"Your elderly family member"}
+*Assessment Date:* ${date} at ${time}
+
+*Concern(s) detected:*
+${risks.map(r=>`• ${r}`).join("
+")}
+
+*What this means:*
+${frailtyLevel==="Frail"
+  ? "The patient has been classified as Frail, indicating elevated risk of falls and functional decline."
+  : "The patient's mobility capacity score suggests significant movement difficulties."}
+
+*Recommended action:*
+Please check on ${patientName||"your family member"} as soon as possible and consider arranging a medical review or physiotherapy consultation.
+
+_This alert was generated by InteliBond AI-Driven Frailty Assessment. It is not a substitute for professional medical advice._`;
+
+  return msg;
+}
+
+function triggerWhatsAppAlert({ ecPhone, ecName, patientName, frailtyLevel, mcsTotal, assessedAt }) {
+  if (!ecPhone) return false;
+  const phone = ecPhone.replace(/[^\d+]/g,"");
+  const msg = buildWhatsAppAlert({ patientName, frailtyLevel, mcsTotal, assessedAt });
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+  window.open(url, "_blank");
+  return true;
+}
+
+/* WhatsApp Alert Modal */
+function WhatsAppAlertModal({ patientName, frailtyLevel, mcsTotal, ecPhone, ecName, onClose }) {
+  const [sent, setSent] = React.useState(false);
+  const isFrail = frailtyLevel === "Frail";
+  const isLowMCS = mcsTotal != null && mcsTotal < 9;
+
+  const handleSend = () => {
+    triggerWhatsAppAlert({
+      ecPhone, ecName, patientName, frailtyLevel, mcsTotal, assessedAt: new Date().toISOString()
+    });
+    setSent(true);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(18,38,58,0.65)",zIndex:200,
+      display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:430,background:"#fff",borderRadius:"22px 22px 0 0",
+        padding:"24px 22px 40px",animation:"authFadeIn 0.25s ease-out"}}>
+
+        {!sent ? (
+          <>
+            {/* Alert header */}
+            <div style={{textAlign:"center",marginBottom:20}}>
+              <div style={{width:56,height:56,borderRadius:"50%",background:"#FDECEA",
+                border:"2px solid #F4B8B3",display:"flex",alignItems:"center",justifyContent:"center",
+                margin:"0 auto 12px",fontSize:26}}>🚨</div>
+              <div style={{fontSize:17,fontWeight:800,color:"#C0392B",marginBottom:4}}>High-Risk Result Detected</div>
+              <div style={{fontSize:12,color:"#8BA3BE",lineHeight:1.5}}>
+                {[isFrail?"Frail classification":null, isLowMCS?`Low MCS (${mcsTotal}/20)`:null]
+                  .filter(Boolean).join(" · ")}
+              </div>
+            </div>
+
+            {/* Risk summary */}
+            <div style={{background:"#FDECEA",border:"1px solid #F4B8B3",borderRadius:12,
+              padding:"12px 14px",marginBottom:16}}>
+              {isFrail && (
+                <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:isLowMCS?8:0}}>
+                  <span style={{fontSize:14,flexShrink:0}}>⚠️</span>
+                  <div style={{fontSize:12,color:"#C0392B",lineHeight:1.5}}>
+                    <strong>Frail</strong> — Elevated risk of falls and functional decline detected.
+                  </div>
+                </div>
+              )}
+              {isLowMCS && (
+                <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <span style={{fontSize:14,flexShrink:0}}>📉</span>
+                  <div style={{fontSize:12,color:"#C0392B",lineHeight:1.5}}>
+                    <strong>MCS {mcsTotal}/20</strong> — Significant mobility impairment detected.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* EC info */}
+            {ecPhone ? (
+              <div style={{background:"#F0FFF4",border:"1px solid #A8D9CC",borderRadius:12,
+                padding:"12px 14px",marginBottom:20}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#0D7A5F",marginBottom:6}}>NOTIFY EMERGENCY CONTACT</div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:36,height:36,borderRadius:"50%",background:"#25D366",
+                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 1.5C4.41 1.5 1.5 4.41 1.5 8c0 1.15.3 2.23.82 3.16L1.5 14.5l3.42-.81A6.48 6.48 0 0 0 8 14.5c3.59 0 6.5-2.91 6.5-6.5S11.59 1.5 8 1.5z" fill="#25D366" stroke="#fff" strokeWidth="0.8"/>
+                      <path d="M11 9.5c-.17-.08-1-.49-1.16-.55-.15-.06-.27-.08-.38.08s-.44.55-.54.66c-.1.1-.2.12-.37.04-.17-.08-.72-.27-1.37-.85-.51-.45-.85-1.01-.95-1.18-.1-.17-.01-.26.07-.34.08-.07.17-.19.26-.28.08-.1.11-.17.17-.28.05-.11.03-.2-.01-.28-.04-.08-.38-.92-.52-1.26-.14-.33-.28-.29-.38-.29H5.8c-.11 0-.28.04-.43.2s-.56.55-.56 1.34.57 1.56.65 1.67c.08.1 1.12 1.71 2.71 2.4.38.16.67.26.9.33.38.12.72.1.99.06.3-.05.93-.38 1.06-.75.13-.37.13-.69.09-.75-.04-.07-.15-.11-.32-.19z" fill="#fff"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#12263A"}}>{ecName||"Emergency Contact"}</div>
+                    <div style={{fontSize:11,color:"#8BA3BE"}}>{ecPhone}</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{background:"#F4F8FD",border:"1px solid #D0E0EF",borderRadius:12,
+                padding:"12px 14px",marginBottom:20,fontSize:12,color:"#8BA3BE",textAlign:"center"}}>
+                No emergency contact set. Add one in your Profile tab.
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={onClose}
+                style={{flex:1,padding:"13px",borderRadius:11,border:"1px solid #D0E0EF",
+                  background:"transparent",color:"#4A6280",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                Dismiss
+              </button>
+              {ecPhone && (
+                <button onClick={handleSend}
+                  style={{flex:2,padding:"13px",borderRadius:11,border:"none",
+                    background:"#25D366",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 1.5C4.41 1.5 1.5 4.41 1.5 8c0 1.15.3 2.23.82 3.16L1.5 14.5l3.42-.81A6.48 6.48 0 0 0 8 14.5c3.59 0 6.5-2.91 6.5-6.5S11.59 1.5 8 1.5z" fill="#25D366" stroke="#fff" strokeWidth="0.8"/>
+                    <path d="M11 9.5c-.17-.08-1-.49-1.16-.55-.15-.06-.27-.08-.38.08s-.44.55-.54.66c-.1.1-.2.12-.37.04-.17-.08-.72-.27-1.37-.85-.51-.45-.85-1.01-.95-1.18-.1-.17-.01-.26.07-.34.08-.07.17-.19.26-.28.08-.1.11-.17.17-.28.05-.11.03-.2-.01-.28-.04-.08-.38-.92-.52-1.26-.14-.33-.28-.29-.38-.29H5.8c-.11 0-.28.04-.43.2s-.56.55-.56 1.34.57 1.56.65 1.67c.08.1 1.12 1.71 2.71 2.4.38.16.67.26.9.33.38.12.72.1.99.06.3-.05.93-.38 1.06-.75.13-.37.13-.69.09-.75-.04-.07-.15-.11-.32-.19z" fill="#fff"/>
+                  </svg>
+                  Send via WhatsApp
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          /* Sent confirmation */
+          <div style={{textAlign:"center",padding:"10px 0"}}>
+            <div style={{fontSize:48,marginBottom:12}}>✅</div>
+            <div style={{fontSize:17,fontWeight:800,color:"#12263A",marginBottom:6}}>WhatsApp Opened</div>
+            <div style={{fontSize:13,color:"#8BA3BE",lineHeight:1.6,marginBottom:20}}>
+              The message has been pre-filled in WhatsApp.<br/>
+              Tap <strong style={{color:"#25D366"}}>Send</strong> in WhatsApp to deliver the alert to {ecName||"your contact"}.
+            </div>
+            <button onClick={onClose}
+              style={{width:"100%",padding:"13px",borderRadius:11,border:"none",
+                background:"#1A6FBF",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function InteliBond({ session, profile }) {
   const [view, setView]           = useState("home");
   const [tab, setTab]             = useState("assessment");
   const [profileData, setProfileData] = useState({
     full_name:"", phone:"", age:"", gender:"",
     date_of_birth:"", medical_conditions:"", medications:"",
-    ic_number:"", relationship:""
+    ic_number:"", relationship:"",
+    emergency_contact_name:"", emergency_contact_phone:"", emergency_contact_relationship:""
   });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved,  setProfileSaved]  = useState(false);
@@ -2067,6 +2359,7 @@ function InteliBond({ session, profile }) {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showAddPatient, setShowAddPatient]   = useState(false);
   const [showSaveModal, setShowSaveModal]     = useState(false);
+  const [showWAAlert,  setShowWAAlert]        = useState(false);
   const [historyPatient, setHistoryPatient]   = useState(null);
   const caregiverId = profile?.role!=="elderly" ? session?.user?.id : null;
   const { patients, loading:pLoading, addPatient, deletePatient } = usePatients(caregiverId);
@@ -2259,6 +2552,23 @@ function InteliBond({ session, profile }) {
     clearInterval(gaitTimer.current);clearInterval(gaitPoll.current);
   },[]);
 
+  // Auto-trigger WhatsApp alert for elderly when high-risk result detected
+  // Fires when: frailty becomes "Frail" OR mcsTotal drops below 9 (after MCS is complete)
+  const alertTriggeredRef = useRef(false);
+  useEffect(()=>{
+    if (!isCaregiver && profile?.role==="elderly") {
+      const isFrail = frailty?.level==="Frail";
+      const isLowMCS = mcsComplete && mcsTotal < 9;
+      if ((isFrail || isLowMCS) && !alertTriggeredRef.current) {
+        alertTriggeredRef.current = true;
+        // Small delay so the result screen renders first
+        setTimeout(()=>setShowWAAlert(true), 800);
+      }
+      // Reset trigger if results are cleared (new session)
+      if (!frailty && !mcsComplete) alertTriggeredRef.current = false;
+    }
+  }, [frailty, mcsTotal, mcsComplete, isCaregiver, profile]);
+
   // Fetch profile data on mount
   useEffect(()=>{
     if (!session) return;
@@ -2274,6 +2584,9 @@ function InteliBond({ session, profile }) {
           medications:        data.medications||"",
           ic_number:          data.ic_number||"",
           relationship:       data.relationship||"",
+          emergency_contact_name:         data.emergency_contact_name||"",
+          emergency_contact_phone:        data.emergency_contact_phone||"",
+          emergency_contact_relationship: data.emergency_contact_relationship||"",
         });
       });
   },[session]);
@@ -2301,9 +2614,12 @@ function InteliBond({ session, profile }) {
     };
     // Elderly-only fields
     if (profile?.role === "elderly") {
-      profilePayload.ic_number          = profileData.ic_number||null;
-      profilePayload.medical_conditions = profileData.medical_conditions||null;
-      profilePayload.medications        = profileData.medications||null;
+      profilePayload.ic_number                       = profileData.ic_number||null;
+      profilePayload.medical_conditions              = profileData.medical_conditions||null;
+      profilePayload.medications                     = profileData.medications||null;
+      profilePayload.emergency_contact_name          = profileData.emergency_contact_name||null;
+      profilePayload.emergency_contact_phone         = profileData.emergency_contact_phone||null;
+      profilePayload.emergency_contact_relationship  = profileData.emergency_contact_relationship||null;
     }
     // Caregiver-only fields
     if (profile?.role !== "elderly") {
@@ -2845,6 +3161,49 @@ function InteliBond({ session, profile }) {
                   <InfoRow label="Medications" value={profileData.medications}/>
                 </div>
               )}
+
+              {/* Emergency contact — elderly only */}
+              {role==="elderly" && (
+                <div style={{background:T.surface,border:`1.5px solid ${
+                    profileData.emergency_contact_phone ? T.warnBd : T.border}`,
+                  borderRadius:18,padding:"4px 20px",marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                    padding:"14px 0 8px"}}>
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:T.text3}}>EMERGENCY CONTACT</div>
+                    {profileData.emergency_contact_phone && (
+                      <div style={{fontSize:9,background:T.warnBg,border:`1px solid ${T.warnBd}`,
+                        color:T.warning,borderRadius:20,padding:"2px 8px",fontWeight:700}}>ACTIVE</div>
+                    )}
+                  </div>
+                  {profileData.emergency_contact_phone ? (
+                    <>
+                      <InfoRow label="Name"         value={profileData.emergency_contact_name}/>
+                      <InfoRow label="Phone"        value={profileData.emergency_contact_phone}/>
+                      <InfoRow label="Relationship" value={profileData.emergency_contact_relationship}/>
+                      <div style={{padding:"12px 0 14px"}}>
+                        <a href={`https://wa.me/${(profileData.emergency_contact_phone||"").replace(/[^\d+]/g,"")}`}
+                          target="_blank" rel="noreferrer"
+                          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                            padding:"10px",borderRadius:10,background:"#25D366",color:"#fff",
+                            fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M8 1.5C4.41 1.5 1.5 4.41 1.5 8c0 1.15.3 2.23.82 3.16L1.5 14.5l3.42-.81A6.48 6.48 0 0 0 8 14.5c3.59 0 6.5-2.91 6.5-6.5S11.59 1.5 8 1.5z" fill="#25D366" stroke="#fff" strokeWidth="0.8"/>
+                            <path d="M11 9.5c-.17-.08-1-.49-1.16-.55-.15-.06-.27-.08-.38.08s-.44.55-.54.66c-.1.1-.2.12-.37.04-.17-.08-.72-.27-1.37-.85-.51-.45-.85-1.01-.95-1.18-.1-.17-.01-.26.07-.34.08-.07.17-.19.26-.28.08-.1.11-.17.17-.28.05-.11.03-.2-.01-.28-.04-.08-.38-.92-.52-1.26-.14-.33-.28-.28-.38-.29H5.8c-.11 0-.28.04-.43.2s-.56.55-.56 1.34.57 1.56.65 1.67c.08.1 1.12 1.71 2.71 2.4.38.16.67.26.9.33.38.12.72.1.99.06.3-.05.93-.38 1.06-.75.13-.37.13-.69.09-.75-.04-.07-.15-.11-.32-.19z" fill="#fff"/>
+                          </svg>
+                          Test WhatsApp Link
+                        </a>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{padding:"12px 0 16px",textAlign:"center"}}>
+                      <div style={{fontSize:12,color:T.text3}}>No emergency contact set</div>
+                      <div style={{fontSize:11,color:T.text3,opacity:0.7,marginTop:4}}>
+                        Tap Edit to add one — alerts will be sent via WhatsApp
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -3170,6 +3529,32 @@ function InteliBond({ session, profile }) {
                       Select a patient above to enable saving to their record.
                     </div>
                   )}
+
+                  {/* WhatsApp alert button — elderly only, shown when EC is set */}
+                  {!isCaregiver && (
+                    <div style={{marginTop:10}}>
+                      {profileData.emergency_contact_phone ? (
+                        <button onClick={()=>setShowWAAlert(true)}
+                          style={{width:"100%",padding:"12px",borderRadius:11,border:"none",
+                            background:"#25D366",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
+                            display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M8 1.5C4.41 1.5 1.5 4.41 1.5 8c0 1.15.3 2.23.82 3.16L1.5 14.5l3.42-.81A6.48 6.48 0 0 0 8 14.5c3.59 0 6.5-2.91 6.5-6.5S11.59 1.5 8 1.5z" fill="#25D366" stroke="#fff" strokeWidth="0.8"/>
+                            <path d="M11 9.5c-.17-.08-1-.49-1.16-.55-.15-.06-.27-.08-.38.08s-.44.55-.54.66c-.1.1-.2.12-.37.04-.17-.08-.72-.27-1.37-.85-.51-.45-.85-1.01-.95-1.18-.1-.17-.01-.26.07-.34.08-.07.17-.19.26-.28.08-.1.11-.17.17-.28.05-.11.03-.2-.01-.28-.04-.08-.38-.92-.52-1.26-.14-.33-.28-.29-.38-.29H5.8c-.11 0-.28.04-.43.2s-.56.55-.56 1.34.57 1.56.65 1.67c.08.1 1.12 1.71 2.71 2.4.38.16.67.26.9.33.38.12.72.1.99.06.3-.05.93-.38 1.06-.75.13-.37.13-.69.09-.75-.04-.07-.15-.11-.32-.19z" fill="#fff"/>
+                          </svg>
+                          Alert {profileData.emergency_contact_name||"Emergency Contact"} via WhatsApp
+                        </button>
+                      ) : (
+                        <div style={{padding:"10px 12px",borderRadius:10,border:`1px dashed ${T.border2}`,
+                          fontSize:11,color:T.text3,textAlign:"center",lineHeight:1.5}}>
+                          No emergency contact set. Add one in your{" "}
+                          <span style={{color:T.primary,fontWeight:600,cursor:"pointer"}}
+                            onClick={()=>setTab("profile")}>Profile</span>
+                          {" "}to enable WhatsApp alerts.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3212,6 +3597,19 @@ function InteliBond({ session, profile }) {
           onClose={()=>setShowSaveModal(false)}
         />
       )}
+
+      {/* WhatsApp Emergency Alert — auto-shown for elderly on high-risk result */}
+      {showWAAlert&&(
+        <WhatsAppAlertModal
+          patientName={effectiveProfile?.full_name||profileData.full_name||session?.user?.email}
+          frailtyLevel={frailty?.level}
+          mcsTotal={mcsTotal}
+          ecPhone={profileData.emergency_contact_phone}
+          ecName={profileData.emergency_contact_name}
+          onClose={()=>setShowWAAlert(false)}
+        />
+      )}
+
       <BottomNav/>
     </div>
   );
